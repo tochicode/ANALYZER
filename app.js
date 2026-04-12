@@ -549,3 +549,121 @@ function renderHistory() {
 }
 
 document.addEventListener('DOMContentLoaded', renderHistory);
+
+/* ═══════════════════════════════════════════════════════════
+   EXCEL EXPORT  (uses SheetJS / xlsx)
+═══════════════════════════════════════════════════════════ */
+
+function exportToExcel() {
+  const history = loadHistory();
+  if (history.length === 0) {
+    alert('No analyses to export yet.');
+    return;
+  }
+
+  const XLSX = window.XLSX;
+  if (!XLSX) { alert('Export library not loaded. Check your internet connection.'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  /* ── Sheet 1: All Analyses ─────────────────────────────── */
+  const rows = history.map((h, i) => ({
+    '#':                  i + 1,
+    'Date':               new Date(h.date).toLocaleString('en-GB'),
+    'Home Team':          h.teamA,
+    'Away Team':          h.teamB,
+    'League':             h.league,
+    'Draw Probability %': h.prob,
+    'Confidence Tier':    h.tier.charAt(0).toUpperCase() + h.tier.slice(1),
+    'Total Indicators':   h.totalScore,
+    'Base Indicators':    h.baseScore,
+    'Form Delta':         h.formDelta,
+    'CGS':                h.cgs !== null ? h.cgs : '',
+    'CGC':                h.cgc !== null ? h.cgc : '',
+    'Form A':             h.formA.join(' '),
+    'Form B':             h.formB.join(' '),
+    'Actual Outcome':     h.outcome ? h.outcome.charAt(0).toUpperCase() + h.outcome.slice(1) : 'Pending',
+    'Prediction Correct': h.outcome === null ? 'Pending' : h.outcome === 'draw' ? 'Yes' : 'No',
+  }));
+
+  const ws1 = XLSX.utils.json_to_sheet(rows);
+
+  // Column widths
+  ws1['!cols'] = [
+    { wch: 4  }, // #
+    { wch: 18 }, // Date
+    { wch: 20 }, // Home
+    { wch: 20 }, // Away
+    { wch: 28 }, // League
+    { wch: 20 }, // Prob
+    { wch: 16 }, // Tier
+    { wch: 16 }, // Total ind
+    { wch: 14 }, // Base ind
+    { wch: 12 }, // Form delta
+    { wch: 8  }, // CGS
+    { wch: 8  }, // CGC
+    { wch: 14 }, // Form A
+    { wch: 14 }, // Form B
+    { wch: 16 }, // Outcome
+    { wch: 18 }, // Correct
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'All Analyses');
+
+  /* ── Sheet 2: Accuracy Summary ─────────────────────────── */
+  const resolved   = history.filter(h => h.outcome !== null);
+  const draws      = resolved.filter(h => h.outcome === 'draw');
+  const homes      = resolved.filter(h => h.outcome === 'home');
+  const aways      = resolved.filter(h => h.outcome === 'away');
+  const correct    = draws.length;
+  const accuracy   = resolved.length > 0 ? +((correct / resolved.length) * 100).toFixed(1) : 0;
+  const avgProb    = +(history.reduce((s, h) => s + h.prob, 0) / history.length).toFixed(1);
+  const avgProbResolved = resolved.length > 0
+    ? +(resolved.reduce((s, h) => s + h.prob, 0) / resolved.length).toFixed(1) : 0;
+
+  const summaryRows = [
+    { 'Metric': 'Total analyses',           'Value': history.length },
+    { 'Metric': 'Outcomes logged',          'Value': resolved.length },
+    { 'Metric': 'Pending outcomes',         'Value': history.length - resolved.length },
+    { 'Metric': '',                         'Value': '' },
+    { 'Metric': 'Draw results',             'Value': draws.length },
+    { 'Metric': 'Home win results',         'Value': homes.length },
+    { 'Metric': 'Away win results',         'Value': aways.length },
+    { 'Metric': '',                         'Value': '' },
+    { 'Metric': 'Correct draw predictions', 'Value': correct },
+    { 'Metric': 'Draw prediction accuracy', 'Value': resolved.length > 0 ? accuracy + '%' : 'N/A' },
+    { 'Metric': '',                         'Value': '' },
+    { 'Metric': 'Avg draw probability (all)',       'Value': avgProb + '%' },
+    { 'Metric': 'Avg draw probability (resolved)',  'Value': avgProbResolved + '%' },
+    { 'Metric': '',                         'Value': '' },
+    { 'Metric': 'Export generated',         'Value': new Date().toLocaleString('en-GB') },
+  ];
+
+  const ws2 = XLSX.utils.json_to_sheet(summaryRows);
+  ws2['!cols'] = [{ wch: 34 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Accuracy Summary');
+
+  /* ── Sheet 3: Pending Outcomes ─────────────────────────── */
+  const pending = history.filter(h => h.outcome === null);
+  if (pending.length > 0) {
+    const pendingRows = pending.map((h, i) => ({
+      '#':                  i + 1,
+      'Date Analyzed':      new Date(h.date).toLocaleString('en-GB'),
+      'Match':              `${h.teamA} vs ${h.teamB}`,
+      'League':             h.league,
+      'Draw Probability %': h.prob,
+      'Total Indicators':   h.totalScore,
+      'Actual Outcome':     '— enter result —',
+    }));
+    const ws3 = XLSX.utils.json_to_sheet(pendingRows);
+    ws3['!cols'] = [
+      { wch: 4  }, { wch: 18 }, { wch: 36 },
+      { wch: 28 }, { wch: 20 }, { wch: 16 }, { wch: 20 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws3, 'Pending Outcomes');
+  }
+
+  /* ── Download ──────────────────────────────────────────── */
+  const date = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `DrawScan_History_${date}.xlsx`);
+}
