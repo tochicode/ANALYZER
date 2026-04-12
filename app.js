@@ -391,10 +391,33 @@ function analyze() {
     league: leagueLabel || 'Unknown league',
     leagueTier, prob, tier,
     totalScore, baseScore, formDelta,
+    // Raw inputs
+    posA, posB, gdA, gdB, gsA, gsB, gcA, gcB,
+    drawRate,
+    oddsHome, oddsDraw, oddsAway,
+    bttsy, bttsn, under25,
     cgs: cgs !== null ? +cgs.toFixed(2) : null,
     cgc: cgc !== null ? +cgc.toFixed(2) : null,
     formA: [...formState.A],
     formB: [...formState.B],
+    // Base indicator pass/fail (1/0 for ML)
+    ind_tableDistance:   baseIndicators[0].pass ? 1 : 0,
+    ind_gdGap:           baseIndicators[1].pass ? 1 : 0,
+    ind_drawOdds:        baseIndicators[2].pass ? 1 : 0,
+    ind_balancedOdds:    baseIndicators[3].pass ? 1 : 0,
+    ind_under25:         baseIndicators[4].pass ? 1 : 0,
+    ind_btts:            baseIndicators[5].pass ? 1 : 0,
+    ind_leagueDrawRate:  baseIndicators[6].pass ? 1 : 0,
+    // Form pattern pass/fail (1/0 for ML) — null if form not entered
+    fp_mixedForm:        formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
+    fp_drawHeavy:        formAvailable ? (formPatterns.find(p=>p.label==='Draw-heavy teams')?.triggered ? 1 : 0) : null,
+    fp_losingVsDefensive:formAvailable ? (formPatterns.find(p=>p.label==='Losing side vs defensive side')?.triggered ? 1 : 0) : null,
+    fp_alternating:      formAvailable ? (formPatterns.find(p=>p.label==='Alternating results pattern')?.triggered ? 1 : 0) : null,
+    fp_competitive:      formAvailable ? (formPatterns.find(p=>p.label==='Competitive but not dominant')?.triggered ? 1 : 0) : null,
+    fp_streakControl:    formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
+    fp_quickFormValid:   formAvailable ? (formPatterns.find(p=>p.label==='Quick form validation passed')?.triggered ? 1 : 0) : null,
+    neg_strongVsWeak:    formAvailable ? (formPatterns.find(p=>p.label==='Strong vs weak form mismatch')?.triggered ? 1 : 0) : null,
+    neg_highScoring:     formAvailable ? (formPatterns.find(p=>p.label==='High scoring match pattern')?.triggered ? 1 : 0) : null,
     outcome: null
   });
 }
@@ -554,20 +577,18 @@ document.addEventListener('DOMContentLoaded', renderHistory);
    EXCEL EXPORT  (uses SheetJS / xlsx)
 ═══════════════════════════════════════════════════════════ */
 
+function n(v) { return v !== null && v !== undefined ? v : ''; }
+
 function exportToExcel() {
   const history = loadHistory();
-  if (history.length === 0) {
-    alert('No analyses to export yet.');
-    return;
-  }
-
+  if (history.length === 0) { alert('No analyses to export yet.'); return; }
   const XLSX = window.XLSX;
   if (!XLSX) { alert('Export library not loaded. Check your internet connection.'); return; }
 
   const wb = XLSX.utils.book_new();
 
   /* ── Sheet 1: All Analyses ─────────────────────────────── */
-  const rows = history.map((h, i) => ({
+  const ws1 = XLSX.utils.json_to_sheet(history.map((h, i) => ({
     '#':                  i + 1,
     'Date':               new Date(h.date).toLocaleString('en-GB'),
     'Home Team':          h.teamA,
@@ -577,40 +598,97 @@ function exportToExcel() {
     'Confidence Tier':    h.tier.charAt(0).toUpperCase() + h.tier.slice(1),
     'Total Indicators':   h.totalScore,
     'Base Indicators':    h.baseScore,
-    'Form Delta':         h.formDelta,
-    'CGS':                h.cgs !== null ? h.cgs : '',
-    'CGC':                h.cgc !== null ? h.cgc : '',
+    'Form Delta':         n(h.formDelta),
+    'CGS':                n(h.cgs),
+    'CGC':                n(h.cgc),
     'Form A':             h.formA.join(' '),
     'Form B':             h.formB.join(' '),
     'Actual Outcome':     h.outcome ? h.outcome.charAt(0).toUpperCase() + h.outcome.slice(1) : 'Pending',
     'Prediction Correct': h.outcome === null ? 'Pending' : h.outcome === 'draw' ? 'Yes' : 'No',
-  }));
-
-  const ws1 = XLSX.utils.json_to_sheet(rows);
-
-  // Column widths
+  })));
   ws1['!cols'] = [
-    { wch: 4  }, // #
-    { wch: 18 }, // Date
-    { wch: 20 }, // Home
-    { wch: 20 }, // Away
-    { wch: 28 }, // League
-    { wch: 20 }, // Prob
-    { wch: 16 }, // Tier
-    { wch: 16 }, // Total ind
-    { wch: 14 }, // Base ind
-    { wch: 12 }, // Form delta
-    { wch: 8  }, // CGS
-    { wch: 8  }, // CGC
-    { wch: 14 }, // Form A
-    { wch: 14 }, // Form B
-    { wch: 16 }, // Outcome
-    { wch: 18 }, // Correct
+    {wch:4},{wch:18},{wch:20},{wch:20},{wch:28},{wch:20},{wch:16},
+    {wch:16},{wch:14},{wch:12},{wch:8},{wch:8},{wch:14},{wch:14},{wch:16},{wch:18}
   ];
-
   XLSX.utils.book_append_sheet(wb, ws1, 'All Analyses');
 
-  /* ── Sheet 2: Accuracy Summary ─────────────────────────── */
+  /* ── Sheet 2: ML Training Data ─────────────────────────── */
+  // One flat row per match — all raw inputs + binary feature flags + label
+  // Only include rows where outcome has been logged (labelled data)
+  const labelled = history.filter(h => h.outcome !== null);
+  const mlRows = labelled.map((h, i) => ({
+    // ── Identifiers
+    'match_id':           h.id,
+    'date':               new Date(h.date).toISOString().slice(0,10),
+    'home_team':          h.teamA,
+    'away_team':          h.teamB,
+    'league':             h.league,
+    'league_tier':        h.leagueTier || '',
+
+    // ── Raw inputs
+    'pos_home':           n(h.posA),
+    'pos_away':           n(h.posB),
+    'table_distance':     (h.posA !== null && h.posB !== null) ? Math.abs(h.posA - h.posB) : '',
+    'gd_home':            n(h.gdA),
+    'gd_away':            n(h.gdB),
+    'gd_gap':             (h.gdA !== null && h.gdB !== null) ? Math.abs(h.gdA - h.gdB) : '',
+    'gs_avg_home':        n(h.gsA),
+    'gs_avg_away':        n(h.gsB),
+    'gc_avg_home':        n(h.gcA),
+    'gc_avg_away':        n(h.gcB),
+    'cgs':                n(h.cgs),
+    'cgc':                n(h.cgc),
+    'draw_rate_pct':      n(h.drawRate),
+    'odds_home':          n(h.oddsHome),
+    'odds_draw':          n(h.oddsDraw),
+    'odds_away':          n(h.oddsAway),
+    'odds_btts_yes':      n(h.bttsy),
+    'odds_btts_no':       n(h.bttsn),
+    'odds_under25':       n(h.under25),
+    'form_home':          h.formA.join(''),
+    'form_away':          h.formB.join(''),
+
+    // ── Base indicator flags (1 = passed, 0 = failed)
+    'ind_table_distance': n(h.ind_tableDistance),
+    'ind_gd_gap':         n(h.ind_gdGap),
+    'ind_draw_odds':      n(h.ind_drawOdds),
+    'ind_balanced_odds':  n(h.ind_balancedOdds),
+    'ind_under25':        n(h.ind_under25),
+    'ind_btts':           n(h.ind_btts),
+    'ind_league_rate':    n(h.ind_leagueDrawRate),
+    'base_score':         n(h.baseScore),
+
+    // ── Form pattern flags (1/0, blank if form not entered)
+    'fp_mixed_form':         n(h.fp_mixedForm),
+    'fp_draw_heavy':         n(h.fp_drawHeavy),
+    'fp_losing_vs_defensive':n(h.fp_losingVsDefensive),
+    'fp_alternating':        n(h.fp_alternating),
+    'fp_competitive':        n(h.fp_competitive),
+    'fp_streak_control':     n(h.fp_streakControl),
+    'fp_quick_form_valid':   n(h.fp_quickFormValid),
+    'neg_strong_vs_weak':    n(h.neg_strongVsWeak),
+    'neg_high_scoring':      n(h.neg_highScoring),
+    'form_delta':            n(h.formDelta),
+
+    // ── Model output
+    'total_indicators':   n(h.totalScore),
+    'draw_probability':   n(h.prob),
+
+    // ── Label (target variable)
+    'outcome':            h.outcome,
+    'label_is_draw':      h.outcome === 'draw' ? 1 : 0,
+  }));
+
+  if (mlRows.length > 0) {
+    const ws2 = XLSX.utils.json_to_sheet(mlRows);
+    ws2['!cols'] = Array(Object.keys(mlRows[0]).length).fill(null).map((_, i) => {
+      const key = Object.keys(mlRows[0])[i];
+      return { wch: ['home_team','away_team','league'].includes(key) ? 22 : key.length + 4 };
+    });
+    XLSX.utils.book_append_sheet(wb, ws2, 'ML Training Data');
+  }
+
+  /* ── Sheet 3: Accuracy Summary ─────────────────────────── */
   const resolved   = history.filter(h => h.outcome !== null);
   const draws      = resolved.filter(h => h.outcome === 'draw');
   const homes      = resolved.filter(h => h.outcome === 'home');
@@ -621,32 +699,56 @@ function exportToExcel() {
   const avgProbResolved = resolved.length > 0
     ? +(resolved.reduce((s, h) => s + h.prob, 0) / resolved.length).toFixed(1) : 0;
 
+  // Indicator hit-rate analysis
+  const indKeys = [
+    ['ind_tableDistance',  'Table distance ≤ 6'],
+    ['ind_gdGap',          'GD gap ≤ 8'],
+    ['ind_drawOdds',       'Draw odds > 2.45'],
+    ['ind_balancedOdds',   'Balanced team odds'],
+    ['ind_under25',        'Under 2.5 signal'],
+    ['ind_btts',           'BTTS signal'],
+    ['ind_leagueDrawRate', 'League draw rate ≥ 29%'],
+  ];
+  const indStats = indKeys.map(([key, label]) => {
+    const withInd = resolved.filter(h => h[key] === 1);
+    const drawsWithInd = withInd.filter(h => h.outcome === 'draw');
+    const rate = withInd.length > 0 ? +((drawsWithInd.length / withInd.length) * 100).toFixed(1) : null;
+    return { 'Indicator': label, 'Times triggered': withInd.length, 'Draws when triggered': drawsWithInd.length, 'Draw rate when triggered': rate !== null ? rate + '%' : 'N/A' };
+  });
+
   const summaryRows = [
     { 'Metric': 'Total analyses',           'Value': history.length },
     { 'Metric': 'Outcomes logged',          'Value': resolved.length },
     { 'Metric': 'Pending outcomes',         'Value': history.length - resolved.length },
-    { 'Metric': '',                         'Value': '' },
+    { 'Metric': '', 'Value': '' },
     { 'Metric': 'Draw results',             'Value': draws.length },
     { 'Metric': 'Home win results',         'Value': homes.length },
     { 'Metric': 'Away win results',         'Value': aways.length },
-    { 'Metric': '',                         'Value': '' },
+    { 'Metric': '', 'Value': '' },
     { 'Metric': 'Correct draw predictions', 'Value': correct },
     { 'Metric': 'Draw prediction accuracy', 'Value': resolved.length > 0 ? accuracy + '%' : 'N/A' },
-    { 'Metric': '',                         'Value': '' },
-    { 'Metric': 'Avg draw probability (all)',       'Value': avgProb + '%' },
-    { 'Metric': 'Avg draw probability (resolved)',  'Value': avgProbResolved + '%' },
-    { 'Metric': '',                         'Value': '' },
-    { 'Metric': 'Export generated',         'Value': new Date().toLocaleString('en-GB') },
+    { 'Metric': '', 'Value': '' },
+    { 'Metric': 'Avg draw probability (all)',      'Value': avgProb + '%' },
+    { 'Metric': 'Avg draw probability (resolved)', 'Value': avgProbResolved + '%' },
+    { 'Metric': '', 'Value': '' },
+    { 'Metric': 'Export generated', 'Value': new Date().toLocaleString('en-GB') },
   ];
 
-  const ws2 = XLSX.utils.json_to_sheet(summaryRows);
-  ws2['!cols'] = [{ wch: 34 }, { wch: 16 }];
-  XLSX.utils.book_append_sheet(wb, ws2, 'Accuracy Summary');
+  const ws3 = XLSX.utils.json_to_sheet(summaryRows);
+  ws3['!cols'] = [{ wch: 34 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Accuracy Summary');
 
-  /* ── Sheet 3: Pending Outcomes ─────────────────────────── */
+  /* ── Sheet 4: Indicator Hit Rates ──────────────────────── */
+  if (resolved.length > 0) {
+    const ws4 = XLSX.utils.json_to_sheet(indStats);
+    ws4['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 26 }];
+    XLSX.utils.book_append_sheet(wb, ws4, 'Indicator Hit Rates');
+  }
+
+  /* ── Sheet 5: Pending Outcomes ─────────────────────────── */
   const pending = history.filter(h => h.outcome === null);
   if (pending.length > 0) {
-    const pendingRows = pending.map((h, i) => ({
+    const ws5 = XLSX.utils.json_to_sheet(pending.map((h, i) => ({
       '#':                  i + 1,
       'Date Analyzed':      new Date(h.date).toLocaleString('en-GB'),
       'Match':              `${h.teamA} vs ${h.teamB}`,
@@ -654,13 +756,9 @@ function exportToExcel() {
       'Draw Probability %': h.prob,
       'Total Indicators':   h.totalScore,
       'Actual Outcome':     '— enter result —',
-    }));
-    const ws3 = XLSX.utils.json_to_sheet(pendingRows);
-    ws3['!cols'] = [
-      { wch: 4  }, { wch: 18 }, { wch: 36 },
-      { wch: 28 }, { wch: 20 }, { wch: 16 }, { wch: 20 }
-    ];
-    XLSX.utils.book_append_sheet(wb, ws3, 'Pending Outcomes');
+    })));
+    ws5['!cols'] = [{wch:4},{wch:18},{wch:36},{wch:28},{wch:20},{wch:16},{wch:20}];
+    XLSX.utils.book_append_sheet(wb, ws5, 'Pending Outcomes');
   }
 
   /* ── Download ──────────────────────────────────────────── */
