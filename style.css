@@ -1044,3 +1044,244 @@ main {
   box-shadow: 0 0 8px rgba(232,184,75,0.5);
   flex-shrink: 0;
 }
+
+/* ─── History Section ──────────────────────────────────────── */
+.history-section {
+  margin-top: 4rem;
+  padding-top: 3rem;
+  border-top: 1px solid var(--rim);
+}
+
+.history-title-row {
+  margin-bottom: 1.5rem;
+}
+
+.history-section-title {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--t1);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.history-icon { color: var(--gold); font-size: 18px; }
+
+.history-section-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t3);
+  letter-spacing: 0.04em;
+}
+
+/* Header bar */
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--rim);
+  border-radius: var(--rl) var(--rl) 0 0;
+  border-bottom: none;
+  flex-wrap: wrap;
+}
+
+.history-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.hst {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 20px;
+  gap: 2px;
+}
+
+.hst-n {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--t1);
+  line-height: 1;
+}
+
+.hst-l {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.hst-sep {
+  width: 1px;
+  height: 32px;
+  background: var(--rim);
+}
+
+.clear-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--red);
+  background: var(--red-dim);
+  border: 1px solid rgba(240,96,90,0.2);
+  border-radius: var(--r);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.clear-btn:hover { opacity: 0.75; }
+
+/* History list */
+.history-list {
+  border: 1px solid var(--rim);
+  border-radius: 0 0 var(--rl) var(--rl);
+  overflow: hidden;
+}
+
+.history-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--rim);
+  background: var(--surface);
+  transition: background 0.15s;
+}
+
+.history-row:last-child { border-bottom: none; }
+.history-row:hover { background: var(--surface-2); }
+
+.history-row.row-correct {
+  border-left: 3px solid var(--green);
+  background: rgba(78,203,141,0.03);
+}
+
+.history-row.row-wrong {
+  border-left: 3px solid var(--red);
+  background: rgba(240,96,90,0.03);
+}
+
+.hr-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.hr-prob {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+  min-width: 52px;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.hr-main { flex: 1; min-width: 0; }
+
+.hr-match {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--t1);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hr-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t3);
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.hr-dot { color: var(--t4); }
+
+.hr-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.hr-form-team {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t4);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hr-form-sep { color: var(--t4); font-family: var(--mono); font-size: 10px; }
+
+.hr-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.hr-outcome-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t4);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hr-outcome-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.hr-delete {
+  background: transparent;
+  border: none;
+  color: var(--t4);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-top: 2px;
+  transition: color 0.15s;
+}
+
+.hr-delete:hover { color: var(--red); }
+
+.history-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--t4);
+  padding: 2rem 1.5rem;
+  border: 1px solid var(--rim);
+  border-radius: var(--rl);
+  text-align: center;
+  line-height: 1.8;
+}
+
+@media (max-width: 600px) {
+  .history-row { flex-direction: column; gap: 12px; }
+  .hr-right { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
+  .hst { padding: 4px 12px; }
+}

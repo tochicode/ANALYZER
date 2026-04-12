@@ -155,11 +155,12 @@ function analyze() {
     if (dist > 8) fails.push(`Table distance (${dist}) exceeds max of 8`);
   }
 
-  // Goal difference per team ≤ 11
-  if (gdA !== null && Math.abs(gdA) > 11)
-    fails.push(`${tA} goal difference (${gdA}) exceeds ±11`);
-  if (gdB !== null && Math.abs(gdB) > 11)
-    fails.push(`${tB} goal difference (${gdB}) exceeds ±11`);
+  // Goal difference gap between teams ≤ 11
+  if (gdA !== null && gdB !== null) {
+    const gdGap = Math.abs(gdA - gdB);
+    if (gdGap > 11)
+      fails.push(`Goal difference gap between teams (${gdGap}) exceeds max of 11`);
+  }
 
   // Winning streak ≤ 3
   if (formASet.length >= 3 && wsA > 3)
@@ -381,6 +382,21 @@ function analyze() {
 
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   setTimeout(() => animateGauge(prob, tier), 200);
+
+  // Save to history
+  saveToHistory({
+    id: Date.now(),
+    date: new Date().toISOString(),
+    teamA: tA, teamB: tB,
+    league: leagueLabel || 'Unknown league',
+    leagueTier, prob, tier,
+    totalScore, baseScore, formDelta,
+    cgs: cgs !== null ? +cgs.toFixed(2) : null,
+    cgc: cgc !== null ? +cgc.toFixed(2) : null,
+    formA: [...formState.A],
+    formB: [...formState.B],
+    outcome: null
+  });
 }
 
 /* ─── Reset ───────────────────────────────────────────────── */
@@ -389,3 +405,147 @@ function resetForm() {
   document.getElementById('filter-fail').style.display = 'none';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+/* ═══════════════════════════════════════════════════════════
+   HISTORY ENGINE
+═══════════════════════════════════════════════════════════ */
+
+const HISTORY_KEY = 'drawscan_history';
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function saveToHistory(entry) {
+  const history = loadHistory();
+  history.unshift(entry);
+  if (history.length > 100) history.pop();
+  saveHistory(history);
+  renderHistory();
+}
+
+function setOutcome(id, outcome) {
+  const history = loadHistory();
+  const entry = history.find(h => h.id === id);
+  if (entry) {
+    entry.outcome = entry.outcome === outcome ? null : outcome;
+    saveHistory(history);
+    renderHistory();
+  }
+}
+
+function deleteEntry(id) {
+  const history = loadHistory().filter(h => h.id !== id);
+  saveHistory(history);
+  renderHistory();
+}
+
+function clearHistory() {
+  if (!confirm('Clear all history? This cannot be undone.')) return;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    + '  ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function tierColor(tier) {
+  return tier === 'high' ? 'var(--green)' : tier === 'medium' ? 'var(--amber)' : 'var(--red)';
+}
+
+function formPills(form) {
+  return form.map(r => {
+    const col = r === 'W' ? 'var(--green)' : r === 'D' ? 'var(--gold)' : r === 'L' ? 'var(--red)' : 'var(--t4)';
+    const bg  = r === 'W' ? 'rgba(78,203,141,0.1)' : r === 'D' ? 'rgba(232,184,75,0.1)' : r === 'L' ? 'rgba(240,96,90,0.1)' : 'transparent';
+    return `<span style="font-family:var(--mono);font-size:10px;color:${col};background:${bg};border:1px solid ${col}33;border-radius:4px;padding:1px 5px;">${r}</span>`;
+  }).join('');
+}
+
+function outcomeButtons(entry) {
+  const outcomes = [
+    { val: 'draw', label: 'Draw', color: 'var(--gold)' },
+    { val: 'home', label: 'Home', color: 'var(--blue)' },
+    { val: 'away', label: 'Away', color: 'var(--t2)'   },
+  ];
+  return outcomes.map(o => {
+    const active = entry.outcome === o.val;
+    const bg   = active ? o.color : 'transparent';
+    const col  = active ? 'var(--ink)' : 'var(--t4)';
+    const bord = active ? o.color : 'var(--rim-2)';
+    return `<button onclick="setOutcome(${entry.id},'${o.val}')"
+      style="font-family:var(--mono);font-size:9px;letter-spacing:.06em;padding:3px 8px;border-radius:4px;border:1px solid ${bord};background:${bg};color:${col};cursor:pointer;">${o.label}</button>`;
+  }).join('');
+}
+
+function renderHistory() {
+  const container = document.getElementById('history-panel');
+  if (!container) return;
+  const history = loadHistory();
+
+  if (history.length === 0) {
+    container.innerHTML = `<div class="history-empty">No analyses saved yet. Run your first analysis above.</div>`;
+    return;
+  }
+
+  const total    = history.length;
+  const resolved = history.filter(h => h.outcome !== null);
+  const correct  = resolved.filter(h => h.outcome === 'draw');
+  const accuracy = resolved.length > 0 ? Math.round((correct.length / resolved.length) * 100) : null;
+  const avgProb  = Math.round(history.reduce((s, h) => s + h.prob, 0) / total);
+
+  container.innerHTML = `
+    <div class="history-header">
+      <div class="history-stats-row">
+        <div class="hst"><span class="hst-n">${total}</span><span class="hst-l">Analyses</span></div>
+        <div class="hst-sep"></div>
+        <div class="hst"><span class="hst-n">${avgProb}%</span><span class="hst-l">Avg probability</span></div>
+        <div class="hst-sep"></div>
+        <div class="hst"><span class="hst-n">${resolved.length}</span><span class="hst-l">Outcomes logged</span></div>
+        <div class="hst-sep"></div>
+        <div class="hst"><span class="hst-n" style="color:${accuracy !== null ? 'var(--green)' : 'var(--t3)'}">${accuracy !== null ? accuracy + '%' : '—'}</span><span class="hst-l">Draw accuracy</span></div>
+      </div>
+      <button class="clear-btn" onclick="clearHistory()">Clear all</button>
+    </div>
+    <div class="history-list">
+      ${history.map(entry => `
+        <div class="history-row ${entry.outcome === 'draw' ? 'row-correct' : entry.outcome ? 'row-wrong' : ''}">
+          <div class="hr-left">
+            <div class="hr-prob" style="color:${tierColor(entry.tier)}">${entry.prob}%</div>
+            <div class="hr-main">
+              <div class="hr-match">${entry.teamA} <span style="color:var(--t4)">vs</span> ${entry.teamB}</div>
+              <div class="hr-meta">
+                <span>${entry.league}</span>
+                <span class="hr-dot">·</span>
+                <span>${formatDate(entry.date)}</span>
+                <span class="hr-dot">·</span>
+                <span style="color:var(--t3)">${entry.totalScore} indicators</span>
+              </div>
+              ${(entry.formA.some(r=>r!=='?') || entry.formB.some(r=>r!=='?')) ? `
+              <div class="hr-form">
+                <span class="hr-form-team">${entry.teamA.split(' ')[0]}</span>
+                ${formPills(entry.formA)}
+                <span class="hr-form-sep">·</span>
+                <span class="hr-form-team">${entry.teamB.split(' ')[0]}</span>
+                ${formPills(entry.formB)}
+              </div>` : ''}
+            </div>
+          </div>
+          <div class="hr-right">
+            <div class="hr-outcome-label">Actual result</div>
+            <div class="hr-outcome-btns">${outcomeButtons(entry)}</div>
+            <button class="hr-delete" onclick="deleteEntry(${entry.id})" title="Remove">✕</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+document.addEventListener('DOMContentLoaded', renderHistory);
