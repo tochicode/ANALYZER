@@ -9,12 +9,12 @@ const formCycle = { '?': 'W', 'W': 'D', 'D': 'L', 'L': 'W' };
 
 /* ─── Form sequence toggle ────────────────────────────────── */
 function cycleForm(btn, team) {
+  const cur = btn.getAttribute('data-val') || '?';
+  const next = formCycle[cur] || 'W';
   const idx = Array.from(btn.parentElement.children).indexOf(btn);
-  const cur = formState[team][idx];
-  const next = formCycle[cur];
   formState[team][idx] = next;
-  btn.textContent = next;
   btn.setAttribute('data-val', next);
+  btn.textContent = next;
 }
 
 /* ─── Live name sync ──────────────────────────────────────── */
