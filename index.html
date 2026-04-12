@@ -11,12 +11,10 @@
 </head>
 <body>
 
-  <!-- Atmosphere layers -->
   <div class="atmos-pitch"></div>
   <div class="atmos-vignette"></div>
   <div class="atmos-glow"></div>
 
-  <!-- Header -->
   <header>
     <div class="header-inner">
       <div class="wordmark">
@@ -25,7 +23,7 @@
         <span class="wordmark-sub">Probability Engine</span>
       </div>
       <nav class="header-nav">
-        <span class="nav-pill">v1.0</span>
+        <span class="nav-pill">v2.0</span>
         <span class="nav-divider">·</span>
         <span class="nav-label">Manual Input</span>
       </nav>
@@ -33,31 +31,22 @@
   </header>
 
   <main>
-    <!-- Hero -->
     <section class="hero">
       <div class="hero-eyebrow">Football Analytics Tool</div>
-      <h1 class="hero-title">
-        Identify the<br />
-        <em>draw</em> before<br />
-        kickoff.
-      </h1>
-      <p class="hero-body">
-        Input match statistics, form data, and market signals.<br />
-        Get a clear draw probability score in seconds.
-      </p>
+      <h1 class="hero-title">Identify the<br /><em>draw</em> before<br />kickoff.</h1>
+      <p class="hero-body">Input match statistics, form sequences, and market signals.<br />Pattern analysis engine included.</p>
       <div class="hero-stats">
-        <div class="hstat"><span class="hstat-n">7</span><span class="hstat-l">Indicators</span></div>
+        <div class="hstat"><span class="hstat-n">7</span><span class="hstat-l">Base Indicators</span></div>
         <div class="hstat-sep"></div>
-        <div class="hstat"><span class="hstat-n">5</span><span class="hstat-l">Hard Filters</span></div>
+        <div class="hstat"><span class="hstat-n">6</span><span class="hstat-l">Form Patterns</span></div>
         <div class="hstat-sep"></div>
         <div class="hstat"><span class="hstat-n">85%</span><span class="hstat-l">Max Confidence</span></div>
       </div>
     </section>
 
-    <!-- Form -->
     <div class="form-body">
 
-      <!-- Step 1: Context -->
+      <!-- 01 Match Context -->
       <div class="form-section">
         <div class="step-marker">
           <span class="step-num">01</span>
@@ -81,20 +70,13 @@
               <label>League</label>
               <select id="league">
                 <option value="">— Select league —</option>
-                <optgroup label="High Draw Leagues">
+                <optgroup label="High Draw Leagues  (+8%)">
                   <option value="high">Italy Serie B</option>
                   <option value="high">France Ligue 2</option>
                   <option value="high">Argentina Primera Nacional</option>
                   <option value="high">Argentina Primera B Metropolitana</option>
                 </optgroup>
-                <optgroup label="Medium Draw Leagues">
-                  <option value="medium">Brazil Serie B</option>
-                  <option value="medium">Chile Primera B</option>
-                  <option value="medium">Portugal Liga 2</option>
-                  <option value="medium">Greece Super League 2</option>
-                  <option value="medium">Colombia Primera B</option>
-                </optgroup>
-                <optgroup label="African Draw Leagues">
+                <optgroup label="African Draw Leagues  (+6%)">
                   <option value="african">Kenya Premier League</option>
                   <option value="african">Ethiopia Premier League</option>
                   <option value="african">Tanzania Premier League</option>
@@ -103,8 +85,12 @@
                   <option value="african">Zambia Super League</option>
                   <option value="african">Zimbabwe Premier League</option>
                 </optgroup>
-                <optgroup label="Youth">
-                  <option value="youth">England PDL (U21)</option>
+                <optgroup label="Medium Draw Leagues  (+5%)">
+                  <option value="medium">Brazil Serie B</option>
+                  <option value="medium">Chile Primera B</option>
+                  <option value="medium">Portugal Liga 2</option>
+                  <option value="medium">Greece Super League 2</option>
+                  <option value="medium">Colombia Primera B</option>
                 </optgroup>
                 <optgroup label="Other">
                   <option value="other">Other league</option>
@@ -119,14 +105,14 @@
         </div>
       </div>
 
-      <!-- Step 2: Team Stats -->
+      <!-- 02 Team Stats + Form -->
       <div class="form-section">
         <div class="step-marker">
           <span class="step-num">02</span>
           <span class="step-line"></span>
         </div>
         <div class="step-content">
-          <h2 class="step-title">Team Statistics <span class="step-title-note">Last 5 matches avg.</span></h2>
+          <h2 class="step-title">Team Statistics &amp; Form <span class="step-title-note">Last 5 matches</span></h2>
           <div class="team-panel-wrap">
 
             <div class="team-panel home">
@@ -138,23 +124,32 @@
               <div class="panel-fields">
                 <div class="input-group">
                   <label>League Position</label>
-                  <input id="posA" type="number" placeholder="7" min="1" />
+                  <input id="posA" type="number" placeholder="e.g. 7" min="1" />
                 </div>
                 <div class="input-group">
                   <label>Goal Difference</label>
-                  <input id="gdA" type="number" placeholder="+3" />
+                  <input id="gdA" type="number" placeholder="e.g. +3" />
                 </div>
                 <div class="input-group">
                   <label>Goals Scored Avg</label>
-                  <input id="gsA" type="number" step="0.1" placeholder="1.2" />
+                  <input id="gsA" type="number" step="0.1" placeholder="e.g. 1.2" />
                 </div>
                 <div class="input-group">
                   <label>Goals Conceded Avg</label>
-                  <input id="gcA" type="number" step="0.1" placeholder="0.8" />
+                  <input id="gcA" type="number" step="0.1" placeholder="e.g. 0.8" />
                 </div>
                 <div class="input-group">
-                  <label>Win Streak</label>
-                  <input id="wsA" type="number" placeholder="1" min="0" />
+                  <label>Last 5 Results <span class="label-unit">most recent first</span></label>
+                  <div class="form-sequence-wrap">
+                    <div id="formA" class="form-sequence">
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'A')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'A')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'A')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'A')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'A')">?</button>
+                    </div>
+                    <span class="form-hint">Tap to cycle W · D · L</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -174,23 +169,32 @@
               <div class="panel-fields">
                 <div class="input-group">
                   <label>League Position</label>
-                  <input id="posB" type="number" placeholder="9" min="1" />
+                  <input id="posB" type="number" placeholder="e.g. 9" min="1" />
                 </div>
                 <div class="input-group">
                   <label>Goal Difference</label>
-                  <input id="gdB" type="number" placeholder="-2" />
+                  <input id="gdB" type="number" placeholder="e.g. -2" />
                 </div>
                 <div class="input-group">
                   <label>Goals Scored Avg</label>
-                  <input id="gsB" type="number" step="0.1" placeholder="1.0" />
+                  <input id="gsB" type="number" step="0.1" placeholder="e.g. 1.0" />
                 </div>
                 <div class="input-group">
                   <label>Goals Conceded Avg</label>
-                  <input id="gcB" type="number" step="0.1" placeholder="1.1" />
+                  <input id="gcB" type="number" step="0.1" placeholder="e.g. 1.1" />
                 </div>
                 <div class="input-group">
-                  <label>Win Streak</label>
-                  <input id="wsB" type="number" placeholder="0" min="0" />
+                  <label>Last 5 Results <span class="label-unit">most recent first</span></label>
+                  <div class="form-sequence-wrap">
+                    <div id="formB" class="form-sequence">
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'B')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'B')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'B')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'B')">?</button>
+                      <button type="button" class="form-btn" data-val="?" onclick="cycleForm(this,'B')">?</button>
+                    </div>
+                    <span class="form-hint">Tap to cycle W · D · L</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -199,7 +203,7 @@
         </div>
       </div>
 
-      <!-- Step 3: Market Signals -->
+      <!-- 03 Market Signals -->
       <div class="form-section">
         <div class="step-marker">
           <span class="step-num">03</span>
@@ -244,20 +248,17 @@
 
       <!-- CTA -->
       <div class="cta-row">
-        <button class="cta-btn" id="analyzeBtn" onclick="analyze()">
+        <button class="cta-btn" onclick="analyze()">
           <span class="cta-icon">◆</span>
           <span class="cta-text">Run Draw Analysis</span>
           <span class="cta-arrow">→</span>
         </button>
-        <p class="cta-note">Results appear below. All fields are optional — more data = higher accuracy.</p>
+        <p class="cta-note">All fields optional — more data yields higher accuracy.</p>
       </div>
 
       <!-- Filter Fail -->
       <div id="filter-fail" class="alert-block" style="display:none">
-        <div class="alert-header">
-          <span class="alert-icon">⚠</span>
-          Hard Filter Not Passed
-        </div>
+        <div class="alert-header"><span class="alert-icon">⚠</span> Hard Filter Not Passed</div>
         <div id="filter-reasons" class="alert-body"></div>
       </div>
 
@@ -269,9 +270,9 @@
             <div id="res-league-tag" class="res-league-tag"></div>
             <div id="res-match" class="res-match-name"></div>
           </div>
-          <div id="res-gauge" class="gauge-wrap">
+          <div class="gauge-wrap">
             <svg class="gauge-svg" viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg">
-              <path id="gauge-track" class="gauge-track" d="M 20 90 A 60 60 0 0 1 140 90" fill="none" stroke-width="8" stroke-linecap="round"/>
+              <path class="gauge-track" d="M 20 90 A 60 60 0 0 1 140 90" fill="none" stroke-width="8" stroke-linecap="round"/>
               <path id="gauge-fill" class="gauge-fill" d="M 20 90 A 60 60 0 0 1 140 90" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="0 189"/>
               <text x="80" y="80" class="gauge-pct" text-anchor="middle" id="gauge-pct-text">0%</text>
               <text x="80" y="96" class="gauge-sub" text-anchor="middle">draw probability</text>
@@ -282,23 +283,43 @@
         <div class="result-kpis">
           <div class="kpi">
             <div id="kpi-ind" class="kpi-val"></div>
-            <div class="kpi-label">Indicators met</div>
+            <div class="kpi-label">Total indicators</div>
+          </div>
+          <div class="kpi-sep"></div>
+          <div class="kpi">
+            <div id="kpi-base" class="kpi-val"></div>
+            <div class="kpi-label">Base</div>
+          </div>
+          <div class="kpi-sep"></div>
+          <div class="kpi">
+            <div id="kpi-form" class="kpi-val"></div>
+            <div class="kpi-label">Form</div>
           </div>
           <div class="kpi-sep"></div>
           <div class="kpi">
             <div id="kpi-cgs" class="kpi-val"></div>
-            <div class="kpi-label">Comb. goals scored</div>
+            <div class="kpi-label">CGS</div>
           </div>
           <div class="kpi-sep"></div>
           <div class="kpi">
             <div id="kpi-cgc" class="kpi-val"></div>
-            <div class="kpi-label">Comb. goals conceded</div>
+            <div class="kpi-label">CGC</div>
           </div>
         </div>
 
         <div class="indicators-section">
-          <div class="indicators-heading">Signal Breakdown</div>
+          <div class="indicators-heading">Base Indicators</div>
           <div id="ind-list" class="ind-list"></div>
+        </div>
+
+        <div class="indicators-section">
+          <div class="indicators-heading">Form Pattern Analysis</div>
+          <div id="form-list" class="ind-list"></div>
+        </div>
+
+        <div id="league-boost-section" class="indicators-section" style="display:none">
+          <div class="indicators-heading">League Weighting</div>
+          <div id="league-boost-list" class="ind-list"></div>
         </div>
 
         <div class="result-footer">
