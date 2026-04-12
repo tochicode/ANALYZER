@@ -613,80 +613,115 @@ function exportToExcel() {
   XLSX.utils.book_append_sheet(wb, ws1, 'All Analyses');
 
   /* ── Sheet 2: ML Training Data ─────────────────────────── */
-  // One flat row per match — all raw inputs + binary feature flags + label
-  // Only include rows where outcome has been logged (labelled data)
-  const labelled = history.filter(h => h.outcome !== null);
-  const mlRows = labelled.map((h, i) => ({
-    // ── Identifiers
-    'match_id':           h.id,
-    'date':               new Date(h.date).toISOString().slice(0,10),
-    'home_team':          h.teamA,
-    'away_team':          h.teamB,
-    'league':             h.league,
-    'league_tier':        h.leagueTier || '',
-
-    // ── Raw inputs
-    'pos_home':           n(h.posA),
-    'pos_away':           n(h.posB),
-    'table_distance':     (h.posA !== null && h.posB !== null) ? Math.abs(h.posA - h.posB) : '',
-    'gd_home':            n(h.gdA),
-    'gd_away':            n(h.gdB),
-    'gd_gap':             (h.gdA !== null && h.gdB !== null) ? Math.abs(h.gdA - h.gdB) : '',
-    'gs_avg_home':        n(h.gsA),
-    'gs_avg_away':        n(h.gsB),
-    'gc_avg_home':        n(h.gcA),
-    'gc_avg_away':        n(h.gcB),
-    'cgs':                n(h.cgs),
-    'cgc':                n(h.cgc),
-    'draw_rate_pct':      n(h.drawRate),
-    'odds_home':          n(h.oddsHome),
-    'odds_draw':          n(h.oddsDraw),
-    'odds_away':          n(h.oddsAway),
-    'odds_btts_yes':      n(h.bttsy),
-    'odds_btts_no':       n(h.bttsn),
-    'odds_under25':       n(h.under25),
-    'form_home':          h.formA.join(''),
-    'form_away':          h.formB.join(''),
-
-    // ── Base indicator flags (1 = passed, 0 = failed)
-    'ind_table_distance': n(h.ind_tableDistance),
-    'ind_gd_gap':         n(h.ind_gdGap),
-    'ind_draw_odds':      n(h.ind_drawOdds),
-    'ind_balanced_odds':  n(h.ind_balancedOdds),
-    'ind_under25':        n(h.ind_under25),
-    'ind_btts':           n(h.ind_btts),
-    'ind_league_rate':    n(h.ind_leagueDrawRate),
-    'base_score':         n(h.baseScore),
-
-    // ── Form pattern flags (1/0, blank if form not entered)
-    'fp_mixed_form':         n(h.fp_mixedForm),
-    'fp_draw_heavy':         n(h.fp_drawHeavy),
-    'fp_losing_vs_defensive':n(h.fp_losingVsDefensive),
-    'fp_alternating':        n(h.fp_alternating),
-    'fp_competitive':        n(h.fp_competitive),
-    'fp_streak_control':     n(h.fp_streakControl),
-    'fp_quick_form_valid':   n(h.fp_quickFormValid),
-    'neg_strong_vs_weak':    n(h.neg_strongVsWeak),
-    'neg_high_scoring':      n(h.neg_highScoring),
-    'form_delta':            n(h.formDelta),
-
-    // ── Model output
-    'total_indicators':   n(h.totalScore),
-    'draw_probability':   n(h.prob),
-
-    // ── Label (target variable)
-    'outcome':            h.outcome,
-    'label_is_draw':      h.outcome === 'draw' ? 1 : 0,
-  }));
-
-  if (mlRows.length > 0) {
-    const ws2 = XLSX.utils.json_to_sheet(mlRows);
-    ws2['!cols'] = Array(Object.keys(mlRows[0]).length).fill(null).map((_, i) => {
-      const key = Object.keys(mlRows[0])[i];
-      return { wch: ['home_team','away_team','league'].includes(key) ? 22 : key.length + 4 };
-    });
-    XLSX.utils.book_append_sheet(wb, ws2, 'ML Training Data');
+  // Recalculate indicator flags from raw inputs for legacy entries
+  // that were saved before indicator flags were added to history
+  function recomputeInds(h) {
+    const posA = h.posA, posB = h.posB;
+    const gdA  = h.gdA,  gdB  = h.gdB;
+    const cgs  = h.cgs,  cgc  = h.cgc;
+    return {
+      ind_tableDistance:  (posA != null && posB != null) ? (Math.abs(posA-posB) <= 6 ? 1 : 0) : '',
+      ind_gdGap:          (gdA  != null && gdB  != null) ? (Math.abs(gdA-gdB)   <= 8 ? 1 : 0) : '',
+      ind_drawOdds:       h.oddsDraw  != null ? (h.oddsDraw  > 2.45 ? 1 : 0) : '',
+      ind_balancedOdds:   (h.oddsHome != null && h.oddsAway != null)
+                            ? (h.oddsHome>=2.40&&h.oddsHome<=2.80&&h.oddsAway>=2.70&&h.oddsAway<=3.20 ? 1:0) : '',
+      ind_under25:        h.under25   != null ? (h.under25   < 1.70 ? 1 : 0) : '',
+      ind_btts:           ((h.bttsy != null && h.bttsy>=1.75&&h.bttsy<=1.90)||(h.bttsn!=null&&h.bttsn>=1.39&&h.bttsn<=1.71)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
+      ind_leagueDrawRate: h.drawRate  != null ? (h.drawRate  >= 29 ? 1 : 0) : '',
+    };
   }
+
+  // Include ALL entries with an outcome logged (labelled data only)
+  const labelled = history.filter(h => h.outcome !== null);
+
+  const mlRows = labelled.map((h, i) => {
+    // Use stored flags if available, otherwise recompute from raw inputs
+    const hasFlags = h.ind_tableDistance !== undefined;
+    const flags = hasFlags ? {
+      ind_tableDistance: h.ind_tableDistance,
+      ind_gdGap:         h.ind_gdGap,
+      ind_drawOdds:      h.ind_drawOdds,
+      ind_balancedOdds:  h.ind_balancedOdds,
+      ind_under25:       h.ind_under25,
+      ind_btts:          h.ind_btts,
+      ind_leagueDrawRate:h.ind_leagueDrawRate,
+    } : recomputeInds(h);
+
+    return {
+      // ── Identifiers
+      'match_id':           h.id,
+      'date':               new Date(h.date).toISOString().slice(0,10),
+      'home_team':          h.teamA,
+      'away_team':          h.teamB,
+      'league':             h.league,
+      'league_tier':        h.leagueTier || '',
+
+      // ── Raw inputs
+      'pos_home':           n(h.posA),
+      'pos_away':           n(h.posB),
+      'table_distance':     (h.posA != null && h.posB != null) ? Math.abs(h.posA - h.posB) : '',
+      'gd_home':            n(h.gdA),
+      'gd_away':            n(h.gdB),
+      'gd_gap':             (h.gdA != null && h.gdB != null) ? Math.abs(h.gdA - h.gdB) : '',
+      'gs_avg_home':        n(h.gsA),
+      'gs_avg_away':        n(h.gsB),
+      'gc_avg_home':        n(h.gcA),
+      'gc_avg_away':        n(h.gcB),
+      'cgs':                n(h.cgs),
+      'cgc':                n(h.cgc),
+      'draw_rate_pct':      n(h.drawRate),
+      'odds_home':          n(h.oddsHome),
+      'odds_draw':          n(h.oddsDraw),
+      'odds_away':          n(h.oddsAway),
+      'odds_btts_yes':      n(h.bttsy),
+      'odds_btts_no':       n(h.bttsn),
+      'odds_under25':       n(h.under25),
+      'form_home':          h.formA ? h.formA.join('') : '',
+      'form_away':          h.formB ? h.formB.join('') : '',
+
+      // ── Base indicator flags (1 = passed, 0 = failed, blank = data not entered)
+      'ind_table_distance': n(flags.ind_tableDistance),
+      'ind_gd_gap':         n(flags.ind_gdGap),
+      'ind_draw_odds':      n(flags.ind_drawOdds),
+      'ind_balanced_odds':  n(flags.ind_balancedOdds),
+      'ind_under25':        n(flags.ind_under25),
+      'ind_btts':           n(flags.ind_btts),
+      'ind_league_rate':    n(flags.ind_leagueDrawRate),
+      'base_score':         n(h.baseScore),
+
+      // ── Form pattern flags (1/0, blank if form not entered)
+      'fp_mixed_form':          h.fp_mixedForm         !== undefined ? n(h.fp_mixedForm)         : '',
+      'fp_draw_heavy':          h.fp_drawHeavy         !== undefined ? n(h.fp_drawHeavy)         : '',
+      'fp_losing_vs_defensive': h.fp_losingVsDefensive !== undefined ? n(h.fp_losingVsDefensive) : '',
+      'fp_alternating':         h.fp_alternating       !== undefined ? n(h.fp_alternating)       : '',
+      'fp_competitive':         h.fp_competitive       !== undefined ? n(h.fp_competitive)       : '',
+      'fp_streak_control':      h.fp_streakControl     !== undefined ? n(h.fp_streakControl)     : '',
+      'fp_quick_form_valid':    h.fp_quickFormValid    !== undefined ? n(h.fp_quickFormValid)    : '',
+      'neg_strong_vs_weak':     h.neg_strongVsWeak     !== undefined ? n(h.neg_strongVsWeak)     : '',
+      'neg_high_scoring':       h.neg_highScoring      !== undefined ? n(h.neg_highScoring)      : '',
+      'form_delta':             n(h.formDelta),
+
+      // ── Model output
+      'total_indicators':   n(h.totalScore),
+      'draw_probability':   n(h.prob),
+
+      // ── Label (target variable)
+      'outcome':            h.outcome,
+      'label_is_draw':      h.outcome === 'draw' ? 1 : 0,
+    };
+  });
+
+  // Always create the ML sheet — show placeholder row if no labelled data yet
+  const mlSheetData = mlRows.length > 0 ? mlRows : [{
+    'note': 'No labelled data yet — log actual outcomes in the History section, then re-export.'
+  }];
+  const ws2 = XLSX.utils.json_to_sheet(mlSheetData);
+  if (mlRows.length > 0) {
+    ws2['!cols'] = Object.keys(mlRows[0]).map(key =>
+      ({ wch: ['home_team','away_team','league'].includes(key) ? 22 : Math.max(key.length + 2, 8) })
+    );
+  }
+  XLSX.utils.book_append_sheet(wb, ws2, 'ML Training Data');
 
   /* ── Sheet 3: Accuracy Summary ─────────────────────────── */
   const resolved   = history.filter(h => h.outcome !== null);
