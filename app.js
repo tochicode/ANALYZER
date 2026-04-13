@@ -168,18 +168,9 @@ function analyze() {
   if (formBSet.length >= 3 && wsB > 3)
     fails.push(`${tB} has a win streak of ${wsB} (max 3)`);
 
-  // Combined goals filters
+  // Combined goals — calculated for indicators & soft penalty
   const cgs = (gsA !== null && gsB !== null) ? +(gsA + gsB).toFixed(2) : null;
   const cgc = (gcA !== null && gcB !== null) ? +(gcA + gcB).toFixed(2) : null;
-
-  if (cgs !== null && cgc !== null) {
-    if (cgs >= 2.4 && cgc >= 2.4)
-      fails.push(`Both CGS (${cgs}) and CGC (${cgc}) ≥ 2.4 — high-scoring match expected`);
-    else if (cgs > 2.4 && cgc >= 1.4)
-      fails.push(`CGS ${cgs} > 2.4 but CGC ${cgc} is not < 1.4 (extreme case rule)`);
-    else if (cgc > 2.4 && cgs >= 1.4)
-      fails.push(`CGC ${cgc} > 2.4 but CGS ${cgs} is not < 1.4 (extreme case rule)`);
-  }
 
   if (fails.length > 0) {
     filterMsg.innerHTML = fails.map(f => `<span>— ${f}</span>`).join('');
@@ -305,6 +296,16 @@ function analyze() {
       formPatterns.push({ label: 'High scoring match pattern', detail: `CGS ${cgs} suggests goal-heavy match`, delta: -1, triggered: true, isPenalty: true });
       formDelta -= 1;
     }
+  }
+
+  // Soft penalty: CGS or CGC exceeds 2.4 (runs regardless of form availability)
+  if (cgs !== null && cgs > 2.4) {
+    formPatterns.push({ label: 'High combined goals scored', detail: `CGS ${cgs} > 2.4 — scoring environment elevated`, delta: -1, triggered: true, isPenalty: true });
+    formDelta -= 1;
+  }
+  if (cgc !== null && cgc > 2.4) {
+    formPatterns.push({ label: 'High combined goals conceded', detail: `CGC ${cgc} > 2.4 — defensive environment weak`, delta: -1, triggered: true, isPenalty: true });
+    formDelta -= 1;
   }
 
   /* ── TOTAL SCORE ──────────────────────────────────────── */
@@ -631,7 +632,7 @@ function exportToExcel() {
     };
   }
 
-  // Include ALL entries with an outcome logged (labelled data only)
+  // Include only labelled entries (outcome logged)
   const labelled = history.filter(h => h.outcome !== null);
 
   const mlRows = labelled.map((h, i) => {
@@ -711,9 +712,9 @@ function exportToExcel() {
     };
   });
 
-  // Always create the ML sheet — show placeholder row if no labelled data yet
+  // Always create the ML sheet
   const mlSheetData = mlRows.length > 0 ? mlRows : [{
-    'note': 'No labelled data yet — log actual outcomes in the History section, then re-export.'
+    'note': 'No analyses yet — run an analysis first, then export.'
   }];
   const ws2 = XLSX.utils.json_to_sheet(mlSheetData);
   if (mlRows.length > 0) {
