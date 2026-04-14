@@ -162,11 +162,11 @@ function analyze() {
       fails.push(`Goal difference gap between teams (${gdGap}) exceeds max of 11`);
   }
 
-  // Winning streak ≤ 3
-  if (formASet.length >= 3 && wsA > 3)
-    fails.push(`${tA} has a win streak of ${wsA} (max 3)`);
-  if (formBSet.length >= 3 && wsB > 3)
-    fails.push(`${tB} has a win streak of ${wsB} (max 3)`);
+  // Winning streak — block if 3 or more consecutive wins
+  if (formASet.length >= 3 && wsA >= 3)
+    fails.push(`${tA} has ${wsA} consecutive wins — strong momentum reduces draw likelihood`);
+  if (formBSet.length >= 3 && wsB >= 3)
+    fails.push(`${tB} has ${wsB} consecutive wins — strong momentum reduces draw likelihood`);
 
   // Combined goals — calculated for indicators & soft penalty
   const cgs = (gsA !== null && gsB !== null) ? +(gsA + gsB).toFixed(2) : null;
@@ -260,8 +260,8 @@ function analyze() {
     if (p5) formDelta += 1;
 
     // P6: Streak control (+1)
-    const p6 = wsA <= 3 && wsB <= 3;
-    formPatterns.push({ label: 'Streak control', detail: 'Both win streaks ≤ 3', delta: 1, triggered: p6 });
+    const p6 = wsA < 3 && wsB < 3;
+    formPatterns.push({ label: 'Streak control', detail: 'Both teams fewer than 3 consecutive wins', delta: 1, triggered: p6 });
     if (p6) formDelta += 1;
 
     // Penalty: 5 straight wins (-2)
@@ -276,7 +276,7 @@ function analyze() {
     // Quick Form Validation bonus (+1)
     let qfv = 0;
     if (mixedA && mixedB) qfv++;
-    if (wsA <= 3 && wsB <= 3) qfv++;
+    if (wsA < 3 && wsB < 3) qfv++;
     if (dA >= 1 && dB >= 1) qfv++;
     if (qfv >= 2) {
       formPatterns.push({ label: 'Quick form validation passed', detail: `${qfv}/3 quick checks positive`, delta: 1, triggered: true, isBonus: true });
