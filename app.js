@@ -149,17 +149,17 @@ function analyze() {
   /* ── HARD FILTERS ─────────────────────────────────────── */
   const fails = [];
 
-  // Table distance (new: gap ≤ 8, not individual ≤ 10)
+  // Table distance hard filter
   if (posA !== null && posB !== null) {
     const dist = Math.abs(posA - posB);
-    if (dist > 8) fails.push(`Table distance (${dist}) exceeds max of 8`);
+    if (dist > 12) fails.push(`Table distance (${dist}) exceeds max of 12`);
   }
 
   // Goal difference gap between teams ≤ 11
   if (gdA !== null && gdB !== null) {
     const gdGap = Math.abs(gdA - gdB);
-    if (gdGap > 11)
-      fails.push(`Goal difference gap between teams (${gdGap}) exceeds max of 11`);
+    if (gdGap > 15)
+      fails.push(`Goal difference gap between teams (${gdGap}) exceeds max of 15`);
   }
 
   // Winning streak — block if 3 or more consecutive wins
