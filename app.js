@@ -179,170 +179,212 @@ function analyze() {
     return;
   }
 
-  /* ── BASE INDICATORS (7) ──────────────────────────────── */
-  const baseIndicators = [
-    {
-      label: 'Similar goal difference',
-      detail: 'GD gap ≤ 8',
-      pass: gdA !== null && gdB !== null && Math.abs(gdA - gdB) <= 8
-    },
-    {
-      label: 'Draw odds in signal range',
-      detail: '2.50–2.95  (sweet spot per data)',
-      pass: oddsDraw !== null && oddsDraw >= 2.50 && oddsDraw <= 2.95
-    },
-    {
-      label: 'Balanced team odds',
-      detail: 'Home 2.40–2.80 · Away 2.70–3.20',
-      pass: oddsHome !== null && oddsAway !== null &&
-            oddsHome >= 2.40 && oddsHome <= 2.80 &&
-            oddsAway >= 2.70 && oddsAway <= 3.20
-    },
-    {
-      label: 'Under 2.5 market signal',
-      detail: 'Odds ≤ 1.50  (tightened from 1.70)',
-      pass: under25 !== null && under25 <= 1.50
-    },
-    {
-      label: 'BTTS market signal',
-      detail: 'Yes 1.75–1.90  or  No 1.39–1.71',
-      pass: (bttsy !== null && bttsy >= 1.75 && bttsy <= 1.90) ||
-            (bttsn !== null && bttsn >= 1.39 && bttsn <= 1.71)
-    },
-    {
-      label: 'Low conceding environment',
-      detail: 'CGC ≤ 1.8  (50% draw rate in data)',
-      pass: cgc !== null && cgc <= 1.8
-    },
-    {
-      label: 'League draw rate ≥ 29%',
-      detail: 'Historical draw rate signal',
-      pass: drawRate !== null && drawRate >= 29
-    }
-  ];
+  /* ══════════════════════════════════════════════════════
+     WEIGHTED SCORING MODEL v3
+     Score = weighted sum of normalised signals − penalties
+  ══════════════════════════════════════════════════════ */
 
-  const baseScore = baseIndicators.filter(i => i.pass).length;
+  // ── 3.1 Under 2.5
+  let v_u25 = 0;
+  if (under25 !== null) {
+    if (under25 <= 1.50)                    v_u25 = 1.0;
+    else if (under25 <= 1.60)               v_u25 = 0.5;
+  }
 
-  /* ── FORM PATTERN ENGINE ──────────────────────────────── */
-  const formPatterns = [];
-  let formDelta = 0;
+  // ── 3.2 BTTS
+  let v_btts = 0;
+  if ((bttsy !== null && bttsy >= 1.75 && bttsy <= 1.90) ||
+      (bttsn !== null && bttsn >= 1.39 && bttsn <= 1.71)) v_btts = 1.0;
+
+  // ── 3.3 CGC (most important)
+  let v_cgc = 0;
+  if (cgc !== null) {
+    if (cgc <= 2.0)                         v_cgc = 1.0;
+    else if (cgc <= 2.2)                    v_cgc = 0.7;
+    else if (cgc <= 2.4)                    v_cgc = 0.3;
+  }
+
+  // ── 3.4 Odds balance (|home − away| diff)
+  let v_oddsBalance = 0;
+  if (oddsHome !== null && oddsAway !== null) {
+    const diff = Math.abs(oddsHome - oddsAway);
+    if (diff <= 0.30)                       v_oddsBalance = 1.0;
+    else if (diff <= 0.60)                  v_oddsBalance = 0.5;
+  }
+
+  // ── 3.5 Draw odds
+  let v_drawOdds = 0;
+  if (oddsDraw !== null) {
+    if (oddsDraw >= 2.55 && oddsDraw <= 2.95)  v_drawOdds = 1.0;
+    else if (oddsDraw >= 2.40 && oddsDraw < 2.55) v_drawOdds = 0.5;
+    else if (oddsDraw > 2.95 && oddsDraw <= 3.10) v_drawOdds = 0.5;
+  }
+
+  // ── 3.6 GD balance
+  let v_gdBalance = 0;
+  if (gdA !== null && gdB !== null) {
+    if (Math.abs(gdA - gdB) <= 8)           v_gdBalance = 1.0;
+  }
+
+  // ── 3.7 Form
+  let v_form = 0;
   const formAvailable = formASet.length > 0 && formBSet.length > 0;
-
+  let formDetails = [];
   if (formAvailable) {
-    const wA = countInForm('A','W'), dA = countInForm('A','D'), lA = countInForm('A','L');
-    const wB = countInForm('B','W'), dB = countInForm('B','D'), lB = countInForm('B','L');
-    const mixedA = wA > 0 && dA > 0 && lA > 0;
-    const mixedB = wB > 0 && dB > 0 && lB > 0;
+    const dA = countInForm('A','D'), dB = countInForm('B','D');
+    const bothHaveDraw = dA >= 1 && dB >= 1;
+    const noLongStreak = wsA < 3 && wsB < 3;
+    if (bothHaveDraw && noLongStreak)       v_form = 1.0;
+    formDetails.push({ label: 'Both teams have ≥ 1 draw', pass: bothHaveDraw });
+    formDetails.push({ label: 'No win streak ≥ 3', pass: noLongStreak });
+  }
 
-    // P1: Mixed form vs Mixed form (+1) — data confirmed: +9.5% lift
-    const p1 = mixedA && mixedB;
-    formPatterns.push({ label: 'Mixed form vs mixed form', detail: 'Both teams show W, D & L', delta: 1, triggered: p1 });
-    if (p1) formDelta += 1;
+  // ── 3.8 League
+  let v_league = 0;
+  if (drawRate !== null) {
+    if (drawRate >= 30)                     v_league = 1.0;
+    else if (drawRate >= 27)                v_league = 0.5;
+  }
+  // League tier boost on top
+  const leagueTierBoost = { high: 1.0, african: 0.7, medium: 0.5, youth: 0, other: 0, '': 0 };
+  if (v_league === 0) v_league = leagueTierBoost[leagueTier] || 0;
 
-    // P2: Streak control (+1) — data confirmed positive
-    const p2 = wsA < 3 && wsB < 3;
-    formPatterns.push({ label: 'Streak control', detail: 'Both teams fewer than 3 consecutive wins', delta: 1, triggered: p2 });
-    if (p2) formDelta += 1;
-
-    // P3: Penalty — 5 straight wins (-2)
+  // ── 3.9 Negatives
+  let v_negative = 0;
+  const negReasons = [];
+  if (oddsDraw !== null && oddsDraw > 3.00) {
+    v_negative += 1;
+    negReasons.push('Draw odds > 3.00 — market doubts a draw');
+  }
+  if (formAvailable) {
+    const wA = countInForm('A','W'), lA = countInForm('A','L');
+    const wB = countInForm('B','W'), lB = countInForm('B','L');
+    const dominant = (wA >= 4 && lB >= 4) || (wB >= 4 && lA >= 4);
+    if (dominant) {
+      v_negative += 1;
+      negReasons.push('One team dominant (4–5W vs 4–5L)');
+    }
     const fiveWinA = formState.A.every(r => r === 'W');
     const fiveWinB = formState.B.every(r => r === 'W');
     if (fiveWinA || fiveWinB) {
-      const who = fiveWinA && fiveWinB ? 'Both teams' : fiveWinA ? tA : tB;
-      formPatterns.push({ label: `${who}: 5 straight wins`, detail: 'Strong momentum — draw unlikely', delta: -2, triggered: true, isPenalty: true });
-      formDelta -= 2;
-    }
-
-    // P4: Quick form validation bonus (+1) — data confirmed: +8.6% lift
-    let qfv = 0;
-    if (mixedA && mixedB) qfv++;
-    if (wsA < 3 && wsB < 3) qfv++;
-    if (dA >= 1 && dB >= 1) qfv++;
-    if (qfv >= 2) {
-      formPatterns.push({ label: 'Quick form validation passed', detail: `${qfv}/3 quick checks positive`, delta: 1, triggered: true, isBonus: true });
-      formDelta += 1;
-    }
-
-    // P5: Negative — strong vs weak form mismatch (-2) — kept, protects against obvious non-draws
-    const strongWeak = (wA >= 4 && lB >= 4) || (wB >= 4 && lA >= 4);
-    if (strongWeak) {
-      formPatterns.push({ label: 'Strong vs weak form mismatch', detail: 'One team 4–5 wins, other 4–5 losses', delta: -2, triggered: true, isPenalty: true });
-      formDelta -= 2;
+      v_negative += 1;
+      negReasons.push(`${fiveWinA && fiveWinB ? 'Both teams' : fiveWinA ? tA : tB}: 5 straight wins`);
     }
   }
-
-  // Soft penalty: CGC > 2.4 — CGC is the meaningful signal (data: draws avg 1.96 vs 2.41 non-draws)
-  // CGS penalty removed — showed near-zero lift in data analysis
-  if (cgc !== null && cgc > 2.4) {
-    formPatterns.push({ label: 'High combined goals conceded', detail: `CGC ${cgc} > 2.4 — weak defensive environment`, delta: -1, triggered: true, isPenalty: true });
-    formDelta -= 1;
+  if (cgs !== null && cgs > 2.6) {
+    v_negative += 1;
+    negReasons.push(`High scoring pattern — CGS ${cgs.toFixed(2)} > 2.6`);
   }
 
-  /* ── TOTAL SCORE ──────────────────────────────────────── */
-  const totalScore = Math.max(0, baseScore + formDelta);
+  // ── WEIGHTED SCORE
+  const rawScore = +(
+    (2.5 * v_u25) +
+    (2.5 * v_btts) +
+    (3.0 * v_cgc) +
+    (1.5 * v_oddsBalance) +
+    (1.5 * v_drawOdds) +
+    (1.0 * v_gdBalance) +
+    (0.5 * v_form) +
+    (0.5 * v_league) -
+    (3.0 * v_negative)
+  ).toFixed(2);
 
-  /* ── PROBABILITY BANDS ────────────────────────────────── */
+  const drawScore = Math.max(0, rawScore);
+
+  // ── SCORE → PROBABILITY
   let prob, tier;
-  if (totalScore <= 2)       { prob = 30;  tier = 'low'; }
-  else if (totalScore <= 4)  { prob = 47;  tier = 'low'; }
-  else if (totalScore <= 6)  { prob = 65;  tier = 'medium'; }
-  else if (totalScore <= 8)  { prob = 74;  tier = 'medium'; }
-  else                       { prob = 82;  tier = 'high'; }
+  if (drawScore <= 4)       { prob = 35; tier = 'low'; }
+  else if (drawScore <= 6)  { prob = 50; tier = 'medium'; }
+  else if (drawScore <= 8)  { prob = 60; tier = 'medium'; }
+  else if (drawScore <= 10) { prob = 68; tier = 'high'; }
+  else if (drawScore <= 12) { prob = 75; tier = 'high'; }
+  else                      { prob = 82; tier = 'high'; }
 
-  /* ── LEAGUE WEIGHTING (add % directly) ───────────────── */
-  const leagueBoost = { high: 8, african: 6, medium: 5, youth: 0, other: 0, '': 0 };
-  const boost = leagueBoost[leagueTier] || 0;
-  prob = Math.min(95, prob + boost);
+  // Fine-tune within band using fractional score
+  const bandSize = drawScore <= 4 ? 5 : drawScore <= 6 ? 10 : drawScore <= 8 ? 10 : drawScore <= 10 ? 8 : drawScore <= 12 ? 7 : 7;
+  const bandFloor = drawScore <= 4 ? 30 : drawScore <= 6 ? 45 : drawScore <= 8 ? 55 : drawScore <= 10 ? 65 : drawScore <= 12 ? 72 : 78;
+  const bandMax   = bandFloor + bandSize;
+  const bandMin   = drawScore <= 4 ? 4 : drawScore <= 6 ? 4 : drawScore <= 8 ? 6 : drawScore <= 10 ? 8 : drawScore <= 12 ? 10 : 12;
+  const bandRange = drawScore <= 4 ? 4 : 2;
+  prob = Math.round(Math.min(bandMax, bandFloor + ((drawScore - bandMin) / bandRange) * bandSize));
+  prob = Math.max(bandFloor, Math.min(bandMax, prob));
 
-  if (prob >= 70) tier = 'high';
-  else if (prob >= 50) tier = 'medium';
+  if (prob >= 65) tier = 'high';
+  else if (prob >= 48) tier = 'medium';
   else tier = 'low';
 
   /* ── RENDER ───────────────────────────────────────────── */
   document.getElementById('res-match').textContent = `${tA} vs ${tB}`;
-  const tierLabels = { high: 'High Draw League +8%', african: 'African Draw League +6%', medium: 'Medium Draw League +5%', youth: 'Youth Competition', other: '' };
+  const tierLabels = { high: 'High Draw League', african: 'African Draw League', medium: 'Medium Draw League', youth: 'Youth Competition', other: '' };
   document.getElementById('res-league-tag').textContent =
     leagueLabel ? leagueLabel + (tierLabels[leagueTier] ? '  ·  ' + tierLabels[leagueTier] : '') : 'League not specified';
 
-  document.getElementById('kpi-ind').textContent  = totalScore;
-  document.getElementById('kpi-base').textContent = baseScore;
-  document.getElementById('kpi-form').textContent = formDelta >= 0 ? '+' + formDelta : String(formDelta);
+  document.getElementById('kpi-ind').textContent  = drawScore.toFixed(1);
+  document.getElementById('kpi-base').textContent = rawScore >= 0 ? '+' + rawScore : rawScore;
+  document.getElementById('kpi-form').textContent = v_negative > 0 ? `−${(3.0 * v_negative).toFixed(1)}` : '0';
   document.getElementById('kpi-cgs').textContent  = cgs !== null ? cgs.toFixed(2) : '—';
   document.getElementById('kpi-cgc').textContent  = cgc !== null ? cgc.toFixed(2) : '—';
 
-  // Base indicators
-  document.getElementById('ind-list').innerHTML = baseIndicators.map(ind =>
-    indRow(ind.label, ind.detail, ind.pass, ind.pass ? 'add' : 'skip', ind.pass ? '+1' : '—')
-  ).join('');
+  // Signal breakdown rows
+  const signals = [
+    { label: 'Under 2.5',          detail: under25 !== null ? `Odds ${under25}` : 'No data',          val: v_u25,        weight: 2.5, contrib: +(2.5 * v_u25).toFixed(2) },
+    { label: 'BTTS signal',         detail: bttsy !== null || bttsn !== null ? `Yes ${bttsy??'—'} / No ${bttsn??'—'}` : 'No data', val: v_btts, weight: 2.5, contrib: +(2.5 * v_btts).toFixed(2) },
+    { label: 'CGC',                 detail: cgc !== null ? `Combined ${cgc.toFixed(2)}` : 'No data',   val: v_cgc,        weight: 3.0, contrib: +(3.0 * v_cgc).toFixed(2) },
+    { label: 'Odds balance',        detail: oddsHome !== null && oddsAway !== null ? `|${oddsHome}−${oddsAway}| = ${Math.abs(oddsHome-oddsAway).toFixed(2)}` : 'No data', val: v_oddsBalance, weight: 1.5, contrib: +(1.5 * v_oddsBalance).toFixed(2) },
+    { label: 'Draw odds',           detail: oddsDraw !== null ? `${oddsDraw}` : 'No data',             val: v_drawOdds,   weight: 1.5, contrib: +(1.5 * v_drawOdds).toFixed(2) },
+    { label: 'GD balance',          detail: gdA !== null && gdB !== null ? `Gap ${Math.abs(gdA-gdB)}` : 'No data', val: v_gdBalance, weight: 1.0, contrib: +(1.0 * v_gdBalance).toFixed(2) },
+    { label: 'Form',                detail: formAvailable ? (v_form === 1 ? 'Both conditions met' : 'Conditions not met') : 'No form entered', val: v_form, weight: 0.5, contrib: +(0.5 * v_form).toFixed(2) },
+    { label: 'League',              detail: drawRate !== null ? `Draw rate ${drawRate}%` : leagueTier !== '' && leagueTier !== 'other' ? `Tier: ${leagueTier}` : 'No data', val: v_league, weight: 0.5, contrib: +(0.5 * v_league).toFixed(2) },
+  ];
 
-  // Form patterns
-  if (formAvailable && formPatterns.length > 0) {
-    document.getElementById('form-list').innerHTML = formPatterns.map(p => {
-      const badgeType = p.isPenalty ? 'sub' : p.isBonus ? 'bonus' : p.triggered ? 'add' : 'skip';
-      const badgeText = p.triggered ? (p.delta > 0 ? `+${p.delta}` : String(p.delta)) : '—';
-      return indRow(p.label, p.detail, p.triggered && !p.isPenalty, badgeType, badgeText);
-    }).join('');
-  } else {
-    document.getElementById('form-list').innerHTML = `
-      <div style="font-family:var(--mono);font-size:12px;color:var(--t4);padding:12px 0;">
-        — Enter last 5 results for both teams to activate form pattern analysis
+  document.getElementById('ind-list').innerHTML = signals.map(s => {
+    const active = s.contrib > 0;
+    const dotClass = active ? 'dot-pass' : 'dot-fail';
+    const labelClass = active ? 'ind-pass' : 'ind-fail';
+    const valDisp = s.val === 1 ? '1.0' : s.val === 0.7 ? '0.7' : s.val === 0.5 ? '0.5' : s.val === 0.3 ? '0.3' : '0';
+    return `
+      <div class="ind-item">
+        <div class="ind-left">
+          <div class="ind-dot ${dotClass}"></div>
+          <div>
+            <div class="ind-label ${labelClass}">${s.label} <span style="color:var(--t3);font-size:10px">× ${s.weight}</span></div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:1px">${s.detail}</div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-family:var(--mono);font-size:12px;color:${active ? 'var(--accent)' : 'var(--t4)'}">+${s.contrib}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--t4)">val ${valDisp}</div>
+        </div>
       </div>`;
+  }).join('');
+
+  // Negatives
+  const formSection = document.getElementById('form-section');
+  if (formSection) {
+    const negHTML = negReasons.length > 0
+      ? negReasons.map(r => `
+          <div class="ind-item penalty">
+            <div class="ind-left">
+              <div class="ind-dot" style="background:var(--red);box-shadow:0 0 8px rgba(240,96,90,.5)"></div>
+              <div class="ind-label" style="color:var(--red)">${r}</div>
+            </div>
+            <span class="ind-badge badge-sub">−3.0</span>
+          </div>`).join('')
+      : `<div style="font-family:var(--mono);font-size:12px;color:var(--t4);padding:12px 0;">— No penalties triggered</div>`;
+
+    document.getElementById('form-list').innerHTML = negHTML;
+
+    if (!formAvailable) {
+      document.getElementById('form-list').innerHTML += `
+        <div style="font-family:var(--mono);font-size:12px;color:var(--t4);padding:8px 0;">
+          — Enter last 5 results to check form-based penalties
+        </div>`;
+    }
   }
 
-  // League boost
+  // Hide league boost section (now folded into v_league)
   const boostSection = document.getElementById('league-boost-section');
-  const boostList    = document.getElementById('league-boost-list');
-  if (boost > 0) {
-    boostSection.style.display = 'block';
-    boostList.innerHTML = `
-      <div class="league-boost-row">
-        <div class="boost-dot"></div>
-        <span>${leagueLabel} · historically high draw rate</span>
-        <span class="ind-badge badge-bonus" style="margin-left:auto">+${boost}%</span>
-      </div>`;
-  } else {
-    boostSection.style.display = 'none';
-  }
+  if (boostSection) boostSection.style.display = 'none';
 
   resultEl.style.display = 'block';
 
@@ -361,7 +403,7 @@ function analyze() {
     teamA: tA, teamB: tB,
     league: leagueLabel || 'Unknown league',
     leagueTier, prob, tier,
-    totalScore, baseScore, formDelta,
+    drawScore, rawScore,
     // Raw inputs
     posA, posB, gdA, gdB, gsA, gsB, gcA, gcB,
     drawRate,
@@ -371,19 +413,19 @@ function analyze() {
     cgc: cgc !== null ? +cgc.toFixed(2) : null,
     formA: [...formState.A],
     formB: [...formState.B],
-    // Base indicator pass/fail (1/0 for ML) — v2 ruleset
-    ind_gdGap:           baseIndicators[0].pass ? 1 : 0,
-    ind_drawOdds:        baseIndicators[1].pass ? 1 : 0,
-    ind_balancedOdds:    baseIndicators[2].pass ? 1 : 0,
-    ind_under25:         baseIndicators[3].pass ? 1 : 0,
-    ind_btts:            baseIndicators[4].pass ? 1 : 0,
-    ind_cgcLow:          baseIndicators[5].pass ? 1 : 0,
-    ind_leagueDrawRate:  baseIndicators[6].pass ? 1 : 0,
-    // Form pattern pass/fail (1/0 for ML) — null if form not entered
-    fp_mixedForm:        formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
-    fp_streakControl:    formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
-    fp_quickFormValid:   formAvailable ? (formPatterns.find(p=>p.label==='Quick form validation passed')?.triggered ? 1 : 0) : null,
-    neg_strongVsWeak:    formAvailable ? (formPatterns.find(p=>p.label==='Strong vs weak form mismatch')?.triggered ? 1 : 0) : null,
+    // Normalised signal values (for ML)
+    v_u25, v_btts, v_cgc, v_oddsBalance, v_drawOdds,
+    v_gdBalance, v_form, v_league, v_negative,
+    // Weighted contributions
+    w_u25:         +(2.5 * v_u25).toFixed(2),
+    w_btts:        +(2.5 * v_btts).toFixed(2),
+    w_cgc:         +(3.0 * v_cgc).toFixed(2),
+    w_oddsBalance: +(1.5 * v_oddsBalance).toFixed(2),
+    w_drawOdds:    +(1.5 * v_drawOdds).toFixed(2),
+    w_gdBalance:   +(1.0 * v_gdBalance).toFixed(2),
+    w_form:        +(0.5 * v_form).toFixed(2),
+    w_league:      +(0.5 * v_league).toFixed(2),
+    w_negative:    +(3.0 * v_negative).toFixed(2),
     outcome: null
   });
 }
@@ -585,12 +627,12 @@ function exportToExcel() {
     const gdA = h.gdA, gdB = h.gdB, cgc = h.cgc;
     return {
       ind_gdGap:         (gdA != null && gdB != null) ? (Math.abs(gdA-gdB) <= 8 ? 1 : 0) : '',
-      ind_drawOdds:      h.oddsDraw != null ? (h.oddsDraw >= 2.50 && h.oddsDraw <= 2.95 ? 1 : 0) : '',
+      ind_drawOdds:      h.oddsDraw != null ? (h.oddsDraw >= 2.55 && h.oddsDraw <= 2.95 ? 1 : 0) : '',
       ind_balancedOdds:  (h.oddsHome != null && h.oddsAway != null)
-                           ? (h.oddsHome>=2.40&&h.oddsHome<=2.80&&h.oddsAway>=2.70&&h.oddsAway<=3.20 ? 1:0) : '',
-      ind_under25:       h.under25 != null ? (h.under25 <= 1.50 ? 1 : 0) : '',
+                           ? (h.oddsHome>=2.50&&h.oddsHome<=3.00&&h.oddsAway>=2.50&&h.oddsAway<=3.10 ? 1:0) : '',
+      ind_under25:       h.under25 != null ? (h.under25 <= 1.55 ? 1 : 0) : '',
       ind_btts:          ((h.bttsy!=null&&h.bttsy>=1.75&&h.bttsy<=1.90)||(h.bttsn!=null&&h.bttsn>=1.39&&h.bttsn<=1.71)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
-      ind_cgcLow:        cgc != null ? (cgc <= 1.8 ? 1 : 0) : '',
+      ind_cgcLow:        cgc != null ? (cgc <= 2.0 ? 1 : 0) : '',
       ind_leagueDrawRate:h.drawRate != null ? (h.drawRate >= 29 ? 1 : 0) : '',
     };
   }
@@ -654,10 +696,9 @@ function exportToExcel() {
       'base_score':         n(h.baseScore),
 
       // ── Form pattern flags (1/0, blank if form not entered)
-      'fp_mixed_form':       h.fp_mixedForm      !== undefined ? n(h.fp_mixedForm)      : '',
-      'fp_streak_control':   h.fp_streakControl  !== undefined ? n(h.fp_streakControl)  : '',
-      'fp_quick_form_valid': h.fp_quickFormValid !== undefined ? n(h.fp_quickFormValid) : '',
-      'neg_strong_vs_weak':  h.neg_strongVsWeak  !== undefined ? n(h.neg_strongVsWeak)  : '',
+      'fp_mixed_form':      h.fp_mixedForm     !== undefined ? n(h.fp_mixedForm)     : '',
+      'fp_streak_control':  h.fp_streakControl !== undefined ? n(h.fp_streakControl) : '',
+      'neg_strong_vs_weak': h.neg_strongVsWeak !== undefined ? n(h.neg_strongVsWeak) : '',
       'form_delta':          n(h.formDelta),
 
       // ── Model output
