@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v4.1 — Weighted Scoring Model
-   Form signals recalibrated from 94-match dataset (Apr 2026)
+   DrawScan v5.0 — Indicator + Form Model
+   Reverted from weighted model. Form patterns data-calibrated.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -179,256 +179,176 @@ function analyze() {
     return;
   }
 
-  /* ══════════════════════════════════════════════════════
-     WEIGHTED SCORING MODEL v3
-     Score = weighted sum of normalised signals − penalties
-  ══════════════════════════════════════════════════════ */
+  /* ── BASE INDICATORS (7) ──────────────────────────────── */
+  const baseIndicators = [
+    {
+      label: 'Similar goal difference',
+      detail: 'GD gap ≤ 8',
+      pass: gdA !== null && gdB !== null && Math.abs(gdA - gdB) <= 8
+    },
+    {
+      label: 'Draw odds in signal range',
+      detail: '2.55–2.95  (data-calibrated)',
+      pass: oddsDraw !== null && oddsDraw >= 2.55 && oddsDraw <= 2.95
+    },
+    {
+      label: 'Balanced team odds',
+      detail: 'Home 2.50–3.00 · Away 2.50–3.10',
+      pass: oddsHome !== null && oddsAway !== null &&
+            oddsHome >= 2.50 && oddsHome <= 3.00 &&
+            oddsAway >= 2.50 && oddsAway <= 3.10
+    },
+    {
+      label: 'Under 2.5 market signal',
+      detail: 'Odds ≤ 1.55  (data-calibrated)',
+      pass: under25 !== null && under25 <= 1.55
+    },
+    {
+      label: 'BTTS market signal',
+      detail: 'Yes 1.75–1.90  or  No 1.39–1.71',
+      pass: (bttsy !== null && bttsy >= 1.75 && bttsy <= 1.90) ||
+            (bttsn !== null && bttsn >= 1.39 && bttsn <= 1.71)
+    },
+    {
+      label: 'Low conceding environment',
+      detail: 'CGC ≤ 2.0  (data-calibrated)',
+      pass: cgc !== null && cgc <= 2.0
+    },
+    {
+      label: 'League draw rate ≥ 29%',
+      detail: 'Historical draw rate signal',
+      pass: drawRate !== null && drawRate >= 29
+    }
+  ];
 
-  // ── 3.1 Under 2.5
-  let v_u25 = 0;
-  if (under25 !== null) {
-    if (under25 <= 1.50)                    v_u25 = 1.0;
-    else if (under25 <= 1.60)               v_u25 = 0.5;
-  }
+  const baseScore = baseIndicators.filter(i => i.pass).length;
 
-  // ── 3.2 BTTS
-  let v_btts = 0;
-  if ((bttsy !== null && bttsy >= 1.75 && bttsy <= 1.90) ||
-      (bttsn !== null && bttsn >= 1.39 && bttsn <= 1.71)) v_btts = 1.0;
-
-  // ── 3.3 CGC (most important)
-  let v_cgc = 0;
-  if (cgc !== null) {
-    if (cgc <= 2.0)                         v_cgc = 1.0;
-    else if (cgc <= 2.2)                    v_cgc = 0.7;
-    else if (cgc <= 2.4)                    v_cgc = 0.3;
-  }
-
-  // ── 3.4 Odds balance (|home − away| diff)
-  let v_oddsBalance = 0;
-  if (oddsHome !== null && oddsAway !== null) {
-    const diff = Math.abs(oddsHome - oddsAway);
-    if (diff <= 0.30)                       v_oddsBalance = 1.0;
-    else if (diff <= 0.60)                  v_oddsBalance = 0.5;
-  }
-
-  // ── 3.5 Draw odds
-  let v_drawOdds = 0;
-  if (oddsDraw !== null) {
-    if (oddsDraw >= 2.55 && oddsDraw <= 2.95)  v_drawOdds = 1.0;
-    else if (oddsDraw >= 2.40 && oddsDraw < 2.55) v_drawOdds = 0.5;
-    else if (oddsDraw > 2.95 && oddsDraw <= 3.10) v_drawOdds = 0.5;
-  }
-
-  // ── 3.6 GD balance
-  let v_gdBalance = 0;
-  if (gdA !== null && gdB !== null) {
-    if (Math.abs(gdA - gdB) <= 8)           v_gdBalance = 1.0;
-  }
-
-  // ── 3.7 Form — recalibrated from 94-match dataset
-  // Old signal (both ≥1D + no streak≥3) had -14.4% lift — removed
-  // New signals from data:
-  //   Away streak = 1: +24.6% lift (56.5% DR) — away team won last game only
-  //   Both wins ≤ 2:   +3.5% lift (35.4% DR)  — neither team on a run
-  //   Both drew last 2: +6.8% lift (38.7% DR) — recent draw form
-  let v_form = 0;
-  let v_form_away_streak = 0;   // away streak=1 bonus
-  let v_form_both_wins = 0;     // both wins≤2 bonus
-  let v_form_recent_draw = 0;   // both drew in last 2
+  /* ── FORM PATTERN ENGINE ──────────────────────────────── */
+  const formPatterns = [];
+  let formDelta = 0;
   const formAvailable = formASet.length > 0 && formBSet.length > 0;
-  let formConditions = [];
+
   if (formAvailable) {
-    const wA = countInForm('A','W'), wB = countInForm('B','W');
-    // Away streak = 1 (away won their last game only, not on a run)
-    const awayStreakOne = wsB === 1;
-    // Both teams won ≤ 2 of last 5
-    const bothWinsLow = wA <= 2 && wB <= 2;
-    // Both drew in last 2 matches (most recent form)
+    const wA = countInForm('A','W'), dA = countInForm('A','D'), lA = countInForm('A','L');
+    const wB = countInForm('B','W'), dB = countInForm('B','D'), lB = countInForm('B','L');
+    const mixedA = wA > 0 && dA > 0 && lA > 0;
+    const mixedB = wB > 0 && dB > 0 && lB > 0;
+
+    // Mixed form vs mixed form (+1)
+    const p1 = mixedA && mixedB;
+    formPatterns.push({ label: 'Mixed form vs mixed form', detail: 'Both teams show W, D & L', delta: 1, triggered: p1 });
+    if (p1) formDelta += 1;
+
+    // Streak control (+1)
+    const p2 = wsA < 3 && wsB < 3;
+    formPatterns.push({ label: 'Streak control', detail: 'Both teams fewer than 3 consecutive wins', delta: 1, triggered: p2 });
+    if (p2) formDelta += 1;
+
+    // Away on 1-game win streak (+1) — data: +24.6% lift
+    const p3 = wsB === 1;
+    formPatterns.push({ label: `Away team on 1-game win streak`, detail: `${tB} won last game only — not on a dominant run`, delta: 1, triggered: p3 });
+    if (p3) formDelta += 1;
+
+    // Both wins ≤ 2 (+1) — data: +3.5% lift
+    const p4 = wA <= 2 && wB <= 2;
+    formPatterns.push({ label: 'Both teams ≤ 2 wins in last 5', detail: 'Neither team on a dominant run', delta: 1, triggered: p4 });
+    if (p4) formDelta += 1;
+
+    // Both drew in last 2 (+1) — data: +6.8% lift
     const recentDrawA = formState.A.slice(0,2).filter(r => r === 'D').length >= 1;
     const recentDrawB = formState.B.slice(0,2).filter(r => r === 'D').length >= 1;
-    const bothRecentDraw = recentDrawA && recentDrawB;
+    const p5 = recentDrawA && recentDrawB;
+    formPatterns.push({ label: 'Both drew in last 2 matches', detail: 'Recent draw form for both sides', delta: 1, triggered: p5 });
+    if (p5) formDelta += 1;
 
-    if (awayStreakOne)   { v_form_away_streak = 1.0; }
-    if (bothWinsLow)     { v_form_both_wins   = 1.0; }
-    if (bothRecentDraw)  { v_form_recent_draw = 1.0; }
-
-    // v_form = weighted combo: away streak is dominant signal
-    v_form = Math.min(1.0, (0.55 * v_form_away_streak) + (0.25 * v_form_both_wins) + (0.20 * v_form_recent_draw));
-
-    formConditions = [
-      { label: `Away on 1-game win streak (${tB})`, pass: awayStreakOne, lift: '+24.6%' },
-      { label: 'Both teams ≤ 2 wins in last 5',     pass: bothWinsLow,  lift: '+3.5%' },
-      { label: 'Both drew in last 2 matches',        pass: bothRecentDraw, lift: '+6.8%' },
-    ];
-  }
-
-  // ── 3.8 League
-  let v_league = 0;
-  if (drawRate !== null) {
-    if (drawRate >= 30)                     v_league = 1.0;
-    else if (drawRate >= 27)                v_league = 0.5;
-  }
-  // League tier boost on top
-  const leagueTierBoost = { high: 1.0, african: 0.7, medium: 0.5, youth: 0, other: 0, '': 0 };
-  if (v_league === 0) v_league = leagueTierBoost[leagueTier] || 0;
-
-  // ── 3.9 Negatives
-  let v_negative = 0;
-  const negReasons = [];
-  if (oddsDraw !== null && oddsDraw > 3.20) {
-    v_negative += 1;
-    negReasons.push('Draw odds > 3.20 — market strongly doubts a draw');
-  }
-  if (formAvailable) {
-    const wAn = countInForm('A','W'), lAn = countInForm('A','L');
-    const wBn = countInForm('B','W'), lBn = countInForm('B','L');
-    const dominant = (wAn >= 4 && lBn >= 4) || (wBn >= 4 && lAn >= 4);
-    if (dominant) {
-      v_negative += 1;
-      negReasons.push('One team dominant (4–5W vs 4–5L)');
-    }
+    // Penalty: 5 straight wins (−2)
     const fiveWinA = formState.A.every(r => r === 'W');
     const fiveWinB = formState.B.every(r => r === 'W');
     if (fiveWinA || fiveWinB) {
-      v_negative += 1;
-      negReasons.push(`${fiveWinA && fiveWinB ? 'Both teams' : fiveWinA ? tA : tB}: 5 straight wins`);
+      const who = fiveWinA && fiveWinB ? 'Both teams' : fiveWinA ? tA : tB;
+      formPatterns.push({ label: `${who}: 5 straight wins`, detail: 'Strong momentum — draw unlikely', delta: -2, triggered: true, isPenalty: true });
+      formDelta -= 2;
+    }
+
+    // Penalty: strong vs weak mismatch (−2)
+    const strongWeak = (wA >= 4 && lB >= 4) || (wB >= 4 && lA >= 4);
+    if (strongWeak) {
+      formPatterns.push({ label: 'Strong vs weak form mismatch', detail: 'One team 4–5W vs other 4–5L', delta: -2, triggered: true, isPenalty: true });
+      formDelta -= 2;
     }
   }
-  if (cgs !== null && cgs > 2.6) {
-    v_negative += 1;
-    negReasons.push(`High scoring pattern — CGS ${cgs.toFixed(2)} > 2.6`);
+
+  // Soft penalty: CGC > 2.4 (runs regardless of form)
+  if (cgc !== null && cgc > 2.4) {
+    formPatterns.push({ label: 'High combined goals conceded', detail: `CGC ${cgc.toFixed(2)} > 2.4 — weak defensive environment`, delta: -1, triggered: true, isPenalty: true });
+    formDelta -= 1;
   }
 
-  // ── WEIGHTED SCORE — v4 weights (recalibrated from 94-match dataset)
-  // Odds balance: 1.5→3.0 (+33.6% lift), CGC: 3.0→1.5 (−5.3% lift),
-  // U25: 2.5→1.5 (+3.3% lift), BTTS: 2.5→1.0 (−0.1% lift)
-  const rawScore = +(
-    (1.5 * v_u25) +
-    (1.0 * v_btts) +
-    (1.5 * v_cgc) +
-    (3.0 * v_oddsBalance) +
-    (1.5 * v_drawOdds) +
-    (1.0 * v_gdBalance) +
-    (0.5 * v_form) +
-    (0.5 * v_league) -
-    (3.0 * v_negative)
-  ).toFixed(2);
+  /* ── TOTAL SCORE ──────────────────────────────────────── */
+  const totalScore = Math.max(0, baseScore + formDelta);
 
-  const drawScore = Math.max(0, rawScore);
-
-  // ── SCORE → PROBABILITY
+  /* ── PROBABILITY BANDS — recalibrated from 97-match dataset ── */
   let prob, tier;
-  if (drawScore <= 4)       { prob = 35; tier = 'low'; }
-  else if (drawScore <= 6)  { prob = 50; tier = 'medium'; }
-  else if (drawScore <= 8)  { prob = 60; tier = 'medium'; }
-  else if (drawScore <= 10) { prob = 68; tier = 'high'; }
-  else if (drawScore <= 12) { prob = 75; tier = 'high'; }
-  else                      { prob = 82; tier = 'high'; }
+  if (totalScore <= 3)       { prob = 20;  tier = 'low'; }
+  else if (totalScore <= 5)  { prob = 38;  tier = 'low'; }
+  else if (totalScore <= 7)  { prob = 42;  tier = 'medium'; }
+  else if (totalScore <= 10) { prob = 45;  tier = 'medium'; }
+  else                       { prob = 50;  tier = 'high'; }
 
-  // Fine-tune within band using fractional score
-  const bandSize = drawScore <= 4 ? 5 : drawScore <= 6 ? 10 : drawScore <= 8 ? 10 : drawScore <= 10 ? 8 : drawScore <= 12 ? 7 : 7;
-  const bandFloor = drawScore <= 4 ? 30 : drawScore <= 6 ? 45 : drawScore <= 8 ? 55 : drawScore <= 10 ? 65 : drawScore <= 12 ? 72 : 78;
-  const bandMax   = bandFloor + bandSize;
-  const bandMin   = drawScore <= 4 ? 4 : drawScore <= 6 ? 4 : drawScore <= 8 ? 6 : drawScore <= 10 ? 8 : drawScore <= 12 ? 10 : 12;
-  const bandRange = drawScore <= 4 ? 4 : 2;
-  prob = Math.round(Math.min(bandMax, bandFloor + ((drawScore - bandMin) / bandRange) * bandSize));
-  prob = Math.max(bandFloor, Math.min(bandMax, prob));
+  /* ── LEAGUE WEIGHTING (add % directly) ───────────────── */
+  const leagueBoost = { high: 8, african: 6, medium: 5, youth: 0, other: 0, '': 0 };
+  const boost = leagueBoost[leagueTier] || 0;
+  prob = Math.min(95, prob + boost);
 
-  if (prob >= 65) tier = 'high';
-  else if (prob >= 48) tier = 'medium';
+  if (prob >= 55) tier = 'high';
+  else if (prob >= 38) tier = 'medium';
   else tier = 'low';
 
   /* ── RENDER ───────────────────────────────────────────── */
   document.getElementById('res-match').textContent = `${tA} vs ${tB}`;
-  const tierLabels = { high: 'High Draw League', african: 'African Draw League', medium: 'Medium Draw League', youth: 'Youth Competition', other: '' };
+  const tierLabels = { high: 'High Draw League +8%', african: 'African Draw League +6%', medium: 'Medium Draw League +5%', youth: 'Youth Competition', other: '' };
   document.getElementById('res-league-tag').textContent =
     leagueLabel ? leagueLabel + (tierLabels[leagueTier] ? '  ·  ' + tierLabels[leagueTier] : '') : 'League not specified';
 
-  document.getElementById('kpi-ind').textContent  = drawScore.toFixed(1);
-  document.getElementById('kpi-base').textContent = rawScore >= 0 ? '+' + rawScore : rawScore;
-  document.getElementById('kpi-form').textContent = v_negative > 0 ? `−${(3.0 * v_negative).toFixed(1)}` : '0';
+  document.getElementById('kpi-ind').textContent  = totalScore;
+  document.getElementById('kpi-base').textContent = baseScore;
+  document.getElementById('kpi-form').textContent = formDelta >= 0 ? '+' + formDelta : String(formDelta);
   document.getElementById('kpi-cgs').textContent  = cgs !== null ? cgs.toFixed(2) : '—';
   document.getElementById('kpi-cgc').textContent  = cgc !== null ? cgc.toFixed(2) : '—';
 
-  // Signal breakdown rows
-  const signals = [
-    { label: 'Odds balance',        detail: oddsHome !== null && oddsAway !== null ? `|${oddsHome}−${oddsAway}| = ${Math.abs(oddsHome-oddsAway).toFixed(2)}` : 'No data', val: v_oddsBalance, weight: 3.0, contrib: +(3.0 * v_oddsBalance).toFixed(2) },
-    { label: 'Draw odds',           detail: oddsDraw !== null ? `${oddsDraw}` : 'No data',             val: v_drawOdds,   weight: 1.5, contrib: +(1.5 * v_drawOdds).toFixed(2) },
-    { label: 'CGC',                 detail: cgc !== null ? `Combined ${cgc.toFixed(2)}` : 'No data',   val: v_cgc,        weight: 1.5, contrib: +(1.5 * v_cgc).toFixed(2) },
-    { label: 'Under 2.5',          detail: under25 !== null ? `Odds ${under25}` : 'No data',          val: v_u25,        weight: 1.5, contrib: +(1.5 * v_u25).toFixed(2) },
-    { label: 'GD balance',          detail: gdA !== null && gdB !== null ? `Gap ${Math.abs(gdA-gdB)}` : 'No data', val: v_gdBalance, weight: 1.0, contrib: +(1.0 * v_gdBalance).toFixed(2) },
-    { label: 'BTTS signal',         detail: bttsy !== null || bttsn !== null ? `Yes ${bttsy??'—'} / No ${bttsn??'—'}` : 'No data', val: v_btts, weight: 1.0, contrib: +(1.0 * v_btts).toFixed(2) },
-    { label: 'Form',                detail: formAvailable ? (() => {
-      const parts = [];
-      if (v_form_away_streak) parts.push('Away streak=1');
-      if (v_form_both_wins)   parts.push('Both wins≤2');
-      if (v_form_recent_draw) parts.push('Both drew last 2');
-      return parts.length ? parts.join(' · ') : 'No conditions met';
-    })() : 'No form entered', val: v_form, weight: 0.5, contrib: +(0.5 * v_form).toFixed(2) },
-    { label: 'League',              detail: drawRate !== null ? `Draw rate ${drawRate}%` : leagueTier !== '' && leagueTier !== 'other' ? `Tier: ${leagueTier}` : 'No data', val: v_league, weight: 0.5, contrib: +(0.5 * v_league).toFixed(2) },
-  ];
+  // Base indicators
+  document.getElementById('ind-list').innerHTML = baseIndicators.map(ind =>
+    indRow(ind.label, ind.detail, ind.pass, ind.pass ? 'add' : 'skip', ind.pass ? '+1' : '—')
+  ).join('');
 
-  document.getElementById('ind-list').innerHTML = signals.map(s => {
-    const active = s.contrib > 0;
-    const dotClass = active ? 'dot-pass' : 'dot-fail';
-    const labelClass = active ? 'ind-pass' : 'ind-fail';
-    const valDisp = s.val === 1 ? '1.0' : s.val === 0.7 ? '0.7' : s.val === 0.5 ? '0.5' : s.val === 0.3 ? '0.3' : '0';
-    return `
-      <div class="ind-item">
-        <div class="ind-left">
-          <div class="ind-dot ${dotClass}"></div>
-          <div>
-            <div class="ind-label ${labelClass}">${s.label} <span style="color:var(--t3);font-size:10px">× ${s.weight}</span></div>
-            <div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:1px">${s.detail}</div>
-          </div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-family:var(--mono);font-size:12px;color:${active ? 'var(--accent)' : 'var(--t4)'}">+${s.contrib}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--t4)">val ${valDisp}</div>
-        </div>
+  // Form patterns
+  if (formAvailable && formPatterns.length > 0) {
+    document.getElementById('form-list').innerHTML = formPatterns.map(p => {
+      const badgeType = p.isPenalty ? 'sub' : p.triggered ? 'add' : 'skip';
+      const badgeText = p.triggered ? (p.delta > 0 ? `+${p.delta}` : String(p.delta)) : '—';
+      return indRow(p.label, p.detail, p.triggered && !p.isPenalty, badgeType, badgeText);
+    }).join('');
+  } else {
+    document.getElementById('form-list').innerHTML = `
+      <div style="font-family:var(--mono);font-size:12px;color:var(--t4);padding:12px 0;">
+        — Enter last 5 results for both teams to activate form pattern analysis
       </div>`;
-  }).join('');
-
-  // Negatives
-  const formSection = document.getElementById('form-section');
-  if (formSection) {
-    const negHTML = negReasons.length > 0
-      ? negReasons.map(r => `
-          <div class="ind-item penalty">
-            <div class="ind-left">
-              <div class="ind-dot" style="background:var(--red);box-shadow:0 0 8px rgba(240,96,90,.5)"></div>
-              <div class="ind-label" style="color:var(--red)">${r}</div>
-            </div>
-            <span class="ind-badge badge-sub">−3.0 pts</span>
-          </div>`).join('')
-      : `<div style="font-family:var(--mono);font-size:12px;color:var(--t4);padding:12px 0;">— No penalties triggered</div>`;
-
-    document.getElementById('form-list').innerHTML = negHTML;
-
-    if (formAvailable && formConditions.length > 0) {
-      document.getElementById('form-list').innerHTML += formConditions.map(c => `
-        <div class="ind-item">
-          <div class="ind-left">
-            <div class="ind-dot ${c.pass ? 'dot-pass' : 'dot-fail'}"></div>
-            <div>
-              <div class="ind-label ${c.pass ? 'ind-pass' : 'ind-fail'}">${c.label}</div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--t4);margin-top:1px">Data lift: ${c.lift}</div>
-            </div>
-          </div>
-          <span class="ind-status ${c.pass ? 'status-pass' : 'status-fail'}">${c.pass ? 'Met' : 'Not met'}</span>
-        </div>`).join('');
-    } else if (!formAvailable) {
-      document.getElementById('form-list').innerHTML += `
-        <div style="font-family:var(--mono);font-size:12px;color:var(--t4);padding:8px 0;">
-          — Enter last 5 results to activate form analysis
-        </div>`;
-    }
   }
 
-  // Hide league boost section (now folded into v_league)
+  // League boost
   const boostSection = document.getElementById('league-boost-section');
-  if (boostSection) boostSection.style.display = 'none';
+  const boostList    = document.getElementById('league-boost-list');
+  if (boost > 0) {
+    boostSection.style.display = 'block';
+    boostList.innerHTML = `
+      <div class="league-boost-row">
+        <div class="boost-dot"></div>
+        <span>${leagueLabel} · historically high draw rate</span>
+        <span class="ind-badge badge-bonus" style="margin-left:auto">+${boost}%</span>
+      </div>`;
+  } else {
+    boostSection.style.display = 'none';
+  }
 
   resultEl.style.display = 'block';
 
@@ -447,7 +367,7 @@ function analyze() {
     teamA: tA, teamB: tB,
     league: leagueLabel || 'Unknown league',
     leagueTier, prob, tier,
-    drawScore, rawScore,
+    totalScore, baseScore, formDelta,
     // Raw inputs
     posA, posB, gdA, gdB, gsA, gsB, gcA, gcB,
     drawRate,
@@ -457,20 +377,21 @@ function analyze() {
     cgc: cgc !== null ? +cgc.toFixed(2) : null,
     formA: [...formState.A],
     formB: [...formState.B],
-    // Normalised signal values (for ML)
-    v_u25, v_btts, v_cgc, v_oddsBalance, v_drawOdds,
-    v_gdBalance, v_form, v_form_away_streak, v_form_both_wins, v_form_recent_draw,
-    v_league, v_negative,
-    // Weighted contributions
-    w_u25:         +(1.5 * v_u25).toFixed(2),
-    w_btts:        +(1.0 * v_btts).toFixed(2),
-    w_cgc:         +(1.5 * v_cgc).toFixed(2),
-    w_oddsBalance: +(3.0 * v_oddsBalance).toFixed(2),
-    w_drawOdds:    +(1.5 * v_drawOdds).toFixed(2),
-    w_gdBalance:   +(1.0 * v_gdBalance).toFixed(2),
-    w_form:        +(0.5 * v_form).toFixed(2),
-    w_league:      +(0.5 * v_league).toFixed(2),
-    w_negative:    +(3.0 * v_negative).toFixed(2),
+    // Base indicator pass/fail (1/0 for ML)
+    ind_gdGap:          baseIndicators[0].pass ? 1 : 0,
+    ind_drawOdds:       baseIndicators[1].pass ? 1 : 0,
+    ind_balancedOdds:   baseIndicators[2].pass ? 1 : 0,
+    ind_under25:        baseIndicators[3].pass ? 1 : 0,
+    ind_btts:           baseIndicators[4].pass ? 1 : 0,
+    ind_cgcLow:         baseIndicators[5].pass ? 1 : 0,
+    ind_leagueDrawRate: baseIndicators[6].pass ? 1 : 0,
+    // Form pattern pass/fail (1/0 for ML)
+    fp_mixedForm:       formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
+    fp_streakControl:   formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
+    fp_awayStreakOne:    formAvailable ? (formPatterns.find(p=>p.label.includes('1-game win streak'))?.triggered ? 1 : 0) : null,
+    fp_bothWinsLow:     formAvailable ? (formPatterns.find(p=>p.label==='Both teams ≤ 2 wins in last 5')?.triggered ? 1 : 0) : null,
+    fp_bothRecentDraw:  formAvailable ? (formPatterns.find(p=>p.label==='Both drew in last 2 matches')?.triggered ? 1 : 0) : null,
+    neg_strongVsWeak:   formAvailable ? (formPatterns.find(p=>p.label==='Strong vs weak form mismatch')?.triggered ? 1 : 0) : null,
     outcome: null
   });
 }
@@ -741,9 +662,12 @@ function exportToExcel() {
       'base_score':         n(h.baseScore),
 
       // ── Form pattern flags (1/0, blank if form not entered)
-      'fp_mixed_form':      h.fp_mixedForm     !== undefined ? n(h.fp_mixedForm)     : '',
-      'fp_streak_control':  h.fp_streakControl !== undefined ? n(h.fp_streakControl) : '',
-      'neg_strong_vs_weak': h.neg_strongVsWeak !== undefined ? n(h.neg_strongVsWeak) : '',
+      'fp_mixed_form':       h.fp_mixedForm      !== undefined ? n(h.fp_mixedForm)      : '',
+      'fp_streak_control':   h.fp_streakControl  !== undefined ? n(h.fp_streakControl)  : '',
+      'fp_away_streak_one':  h.fp_awayStreakOne   !== undefined ? n(h.fp_awayStreakOne)  : '',
+      'fp_both_wins_low':    h.fp_bothWinsLow     !== undefined ? n(h.fp_bothWinsLow)   : '',
+      'fp_both_recent_draw': h.fp_bothRecentDraw  !== undefined ? n(h.fp_bothRecentDraw): '',
+      'neg_strong_vs_weak':  h.neg_strongVsWeak   !== undefined ? n(h.neg_strongVsWeak) : '',
       'form_delta':          n(h.formDelta),
 
       // ── Model output
