@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v5.0 — Indicator + Form Model
-   Reverted from weighted model. Form patterns data-calibrated.
+   DrawScan v5.1 — Indicator + Form Model
+   CGC ≤ 2.0 removed (negative lift confirmed across 2 datasets).
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -210,11 +210,6 @@ function analyze() {
             (bttsn !== null && bttsn >= 1.39 && bttsn <= 1.71)
     },
     {
-      label: 'Low conceding environment',
-      detail: 'CGC ≤ 2.0  (data-calibrated)',
-      pass: cgc !== null && cgc <= 2.0
-    },
-    {
       label: 'League draw rate ≥ 29%',
       detail: 'Historical draw rate signal',
       pass: drawRate !== null && drawRate >= 29
@@ -383,8 +378,7 @@ function analyze() {
     ind_balancedOdds:   baseIndicators[2].pass ? 1 : 0,
     ind_under25:        baseIndicators[3].pass ? 1 : 0,
     ind_btts:           baseIndicators[4].pass ? 1 : 0,
-    ind_cgcLow:         baseIndicators[5].pass ? 1 : 0,
-    ind_leagueDrawRate: baseIndicators[6].pass ? 1 : 0,
+    ind_leagueDrawRate: baseIndicators[5].pass ? 1 : 0,
     // Form pattern pass/fail (1/0 for ML)
     fp_mixedForm:       formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
     fp_streakControl:   formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
@@ -598,7 +592,6 @@ function exportToExcel() {
                            ? (h.oddsHome>=2.50&&h.oddsHome<=3.00&&h.oddsAway>=2.50&&h.oddsAway<=3.10 ? 1:0) : '',
       ind_under25:       h.under25 != null ? (h.under25 <= 1.55 ? 1 : 0) : '',
       ind_btts:          ((h.bttsy!=null&&h.bttsy>=1.75&&h.bttsy<=1.90)||(h.bttsn!=null&&h.bttsn>=1.39&&h.bttsn<=1.71)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
-      ind_cgcLow:        cgc != null ? (cgc <= 2.0 ? 1 : 0) : '',
       ind_leagueDrawRate:h.drawRate != null ? (h.drawRate >= 29 ? 1 : 0) : '',
     };
   }
@@ -657,7 +650,6 @@ function exportToExcel() {
       'ind_balanced_odds':  n(flags.ind_balancedOdds),
       'ind_under25':        n(flags.ind_under25),
       'ind_btts':           n(flags.ind_btts),
-      'ind_cgc_low':        n(flags.ind_cgcLow),
       'ind_league_rate':    n(flags.ind_leagueDrawRate),
       'base_score':         n(h.baseScore),
 
