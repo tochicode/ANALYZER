@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v5.1 — Indicator + Form Model
-   CGC ≤ 2.0 removed (negative lift confirmed across 2 datasets).
+   DrawScan v5.2 — Indicator + Form Model
+   383-match recalibration: BTTS/U25/DrawOdds thresholds updated,
+   away streak=1 and both wins≤2 removed, prob bands recalibrated.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -188,8 +189,8 @@ function analyze() {
     },
     {
       label: 'Draw odds in signal range',
-      detail: '2.55–2.95  (data-calibrated)',
-      pass: oddsDraw !== null && oddsDraw >= 2.55 && oddsDraw <= 2.95
+      detail: '2.50–2.90  (383-match validated)',
+      pass: oddsDraw !== null && oddsDraw >= 2.50 && oddsDraw <= 2.90
     },
     {
       label: 'Balanced team odds',
@@ -200,14 +201,14 @@ function analyze() {
     },
     {
       label: 'Under 2.5 market signal',
-      detail: 'Odds ≤ 1.55  (data-calibrated)',
-      pass: under25 !== null && under25 <= 1.55
+      detail: 'Odds ≤ 1.40  (data-calibrated, 383-match validated)',
+      pass: under25 !== null && under25 <= 1.40
     },
     {
       label: 'BTTS market signal',
-      detail: 'Yes 1.75–1.90  or  No 1.39–1.71',
-      pass: (bttsy !== null && bttsy >= 1.75 && bttsy <= 1.90) ||
-            (bttsn !== null && bttsn >= 1.39 && bttsn <= 1.71)
+      detail: 'Yes 1.80–1.95  or  No 1.40–1.60',
+      pass: (bttsy !== null && bttsy >= 1.80 && bttsy <= 1.95) ||
+            (bttsn !== null && bttsn >= 1.40 && bttsn <= 1.60)
     },
     {
       label: 'League draw rate ≥ 29%',
@@ -239,22 +240,15 @@ function analyze() {
     formPatterns.push({ label: 'Streak control', detail: 'Both teams fewer than 3 consecutive wins', delta: 1, triggered: p2 });
     if (p2) formDelta += 1;
 
-    // Away on 1-game win streak (+1) — data: +24.6% lift
-    const p3 = wsB === 1;
-    formPatterns.push({ label: `Away team on 1-game win streak`, detail: `${tB} won last game only — not on a dominant run`, delta: 1, triggered: p3 });
-    if (p3) formDelta += 1;
-
-    // Both wins ≤ 2 (+1) — data: +3.5% lift
-    const p4 = wA <= 2 && wB <= 2;
-    formPatterns.push({ label: 'Both teams ≤ 2 wins in last 5', detail: 'Neither team on a dominant run', delta: 1, triggered: p4 });
-    if (p4) formDelta += 1;
-
-    // Both drew in last 2 (+1) — data: +6.8% lift
+    // P3: Both drew in last 2 (+1) — stable +6.5% lift across 3 datasets
+    // (Away streak=1 removed — negative in 3/3 datasets)
+    // (Both wins≤2 removed — negative in 2/2 datasets)
     const recentDrawA = formState.A.slice(0,2).filter(r => r === 'D').length >= 1;
     const recentDrawB = formState.B.slice(0,2).filter(r => r === 'D').length >= 1;
-    const p5 = recentDrawA && recentDrawB;
-    formPatterns.push({ label: 'Both drew in last 2 matches', detail: 'Recent draw form for both sides', delta: 1, triggered: p5 });
-    if (p5) formDelta += 1;
+    const p3 = recentDrawA && recentDrawB;
+    formPatterns.push({ label: 'Both drew in last 2 matches', detail: 'Recent draw form for both sides', delta: 1, triggered: p3 });
+    if (p3) formDelta += 1;
+
 
     // Penalty: 5 straight wins (−2)
     const fiveWinA = formState.A.every(r => r === 'W');
@@ -282,13 +276,14 @@ function analyze() {
   /* ── TOTAL SCORE ──────────────────────────────────────── */
   const totalScore = Math.max(0, baseScore + formDelta);
 
-  /* ── PROBABILITY BANDS — recalibrated from 97-match dataset ── */
+  /* ── PROBABILITY BANDS — recalibrated from 383-match dataset ── */
+  // Actual: score≤3=~7%, 4-5=~44%, 6-7=~52%, 8-9=~54%, 10+=~55%
   let prob, tier;
-  if (totalScore <= 3)       { prob = 20;  tier = 'low'; }
-  else if (totalScore <= 5)  { prob = 38;  tier = 'low'; }
-  else if (totalScore <= 7)  { prob = 42;  tier = 'medium'; }
-  else if (totalScore <= 10) { prob = 45;  tier = 'medium'; }
-  else                       { prob = 50;  tier = 'high'; }
+  if (totalScore <= 3)       { prob = 15;  tier = 'low'; }
+  else if (totalScore <= 5)  { prob = 42;  tier = 'medium'; }
+  else if (totalScore <= 7)  { prob = 50;  tier = 'medium'; }
+  else if (totalScore <= 9)  { prob = 55;  tier = 'high'; }
+  else                       { prob = 60;  tier = 'high'; }
 
   /* ── LEAGUE WEIGHTING (add % directly) ───────────────── */
   const leagueBoost = { high: 8, african: 6, medium: 5, youth: 0, other: 0, '': 0 };
@@ -382,8 +377,6 @@ function analyze() {
     // Form pattern pass/fail (1/0 for ML)
     fp_mixedForm:       formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
     fp_streakControl:   formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
-    fp_awayStreakOne:    formAvailable ? (formPatterns.find(p=>p.label.includes('1-game win streak'))?.triggered ? 1 : 0) : null,
-    fp_bothWinsLow:     formAvailable ? (formPatterns.find(p=>p.label==='Both teams ≤ 2 wins in last 5')?.triggered ? 1 : 0) : null,
     fp_bothRecentDraw:  formAvailable ? (formPatterns.find(p=>p.label==='Both drew in last 2 matches')?.triggered ? 1 : 0) : null,
     neg_strongVsWeak:   formAvailable ? (formPatterns.find(p=>p.label==='Strong vs weak form mismatch')?.triggered ? 1 : 0) : null,
     outcome: null
@@ -587,11 +580,11 @@ function exportToExcel() {
     const gdA = h.gdA, gdB = h.gdB, cgc = h.cgc;
     return {
       ind_gdGap:         (gdA != null && gdB != null) ? (Math.abs(gdA-gdB) <= 8 ? 1 : 0) : '',
-      ind_drawOdds:      h.oddsDraw != null ? (h.oddsDraw >= 2.55 && h.oddsDraw <= 2.95 ? 1 : 0) : '',
+      ind_drawOdds:      h.oddsDraw != null ? (h.oddsDraw >= 2.50 && h.oddsDraw <= 2.90 ? 1 : 0) : '',
       ind_balancedOdds:  (h.oddsHome != null && h.oddsAway != null)
                            ? (h.oddsHome>=2.50&&h.oddsHome<=3.00&&h.oddsAway>=2.50&&h.oddsAway<=3.10 ? 1:0) : '',
-      ind_under25:       h.under25 != null ? (h.under25 <= 1.55 ? 1 : 0) : '',
-      ind_btts:          ((h.bttsy!=null&&h.bttsy>=1.75&&h.bttsy<=1.90)||(h.bttsn!=null&&h.bttsn>=1.39&&h.bttsn<=1.71)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
+      ind_under25:       h.under25 != null ? (h.under25 <= 1.40 ? 1 : 0) : '',
+      ind_btts:          ((h.bttsy!=null&&h.bttsy>=1.80&&h.bttsy<=1.95)||(h.bttsn!=null&&h.bttsn>=1.40&&h.bttsn<=1.60)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
       ind_leagueDrawRate:h.drawRate != null ? (h.drawRate >= 29 ? 1 : 0) : '',
     };
   }
@@ -656,8 +649,6 @@ function exportToExcel() {
       // ── Form pattern flags (1/0, blank if form not entered)
       'fp_mixed_form':       h.fp_mixedForm      !== undefined ? n(h.fp_mixedForm)      : '',
       'fp_streak_control':   h.fp_streakControl  !== undefined ? n(h.fp_streakControl)  : '',
-      'fp_away_streak_one':  h.fp_awayStreakOne   !== undefined ? n(h.fp_awayStreakOne)  : '',
-      'fp_both_wins_low':    h.fp_bothWinsLow     !== undefined ? n(h.fp_bothWinsLow)   : '',
       'fp_both_recent_draw': h.fp_bothRecentDraw  !== undefined ? n(h.fp_bothRecentDraw): '',
       'neg_strong_vs_weak':  h.neg_strongVsWeak   !== undefined ? n(h.neg_strongVsWeak) : '',
       'form_delta':          n(h.formDelta),
