@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v5.2 — Indicator + Form Model
-   383-match recalibration: BTTS/U25/DrawOdds thresholds updated,
-   away streak=1 and both wins≤2 removed, prob bands recalibrated.
+   DrawScan v5.3 — Indicator + Form Model
+   474-match update: Away WLW (+1), Home drew last 3 (+1),
+   Away LLD (−1), Home LLL (−1) form patterns added.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -241,14 +241,23 @@ function analyze() {
     if (p2) formDelta += 1;
 
     // P3: Both drew in last 2 (+1) — stable +6.5% lift across 3 datasets
-    // (Away streak=1 removed — negative in 3/3 datasets)
-    // (Both wins≤2 removed — negative in 2/2 datasets)
     const recentDrawA = formState.A.slice(0,2).filter(r => r === 'D').length >= 1;
     const recentDrawB = formState.B.slice(0,2).filter(r => r === 'D').length >= 1;
     const p3 = recentDrawA && recentDrawB;
     formPatterns.push({ label: 'Both drew in last 2 matches', detail: 'Recent draw form for both sides', delta: 1, triggered: p3 });
     if (p3) formDelta += 1;
 
+    // P4: Away WLW pattern (+1) — +32.8% lift, consistent in all 5 datasets
+    // Most recent first: formState.B[0]=W, [1]=L, [2]=W
+    const awayWLW = formState.B.length >= 3 &&
+                    formState.B[0] === 'W' && formState.B[1] === 'L' && formState.B[2] === 'W';
+    formPatterns.push({ label: `Away team: W-L-W pattern (${tB})`, detail: 'Won most recent, lost previous, won before — bounce pattern', delta: 1, triggered: awayWLW });
+    if (awayWLW) formDelta += 1;
+
+    // P5: Home ≥1 draw in last 3 (+1) — rising trend, +4.9% combined lift
+    const homeDrawLast3 = formState.A.slice(0,3).filter(r => r === 'D').length >= 1;
+    formPatterns.push({ label: `Home team drew in last 3 (${tA})`, detail: 'Home team drew at least once in last 3 matches', delta: 1, triggered: homeDrawLast3 });
+    if (homeDrawLast3) formDelta += 1;
 
     // Penalty: 5 straight wins (−2)
     const fiveWinA = formState.A.every(r => r === 'W');
@@ -264,6 +273,23 @@ function analyze() {
     if (strongWeak) {
       formPatterns.push({ label: 'Strong vs weak form mismatch', detail: 'One team 4–5W vs other 4–5L', delta: -2, triggered: true, isPenalty: true });
       formDelta -= 2;
+    }
+
+    // Penalty: Away LLD pattern (−1) — 13.6% DR, worst pattern in dataset
+    // Most recent first: formState.B[0]=L, [1]=L, [2]=D
+    const awayLLD = formState.B.length >= 3 &&
+                    formState.B[0] === 'L' && formState.B[1] === 'L' && formState.B[2] === 'D';
+    if (awayLLD) {
+      formPatterns.push({ label: `Away team: L-L-D pattern (${tB})`, detail: 'Lost last two after drawing — struggling side', delta: -1, triggered: true, isPenalty: true });
+      formDelta -= 1;
+    }
+
+    // Penalty: Home LLL pattern (−1) — 17.9% DR, n=39, consistent negative
+    const homeLLL = formState.A.length >= 3 &&
+                    formState.A[0] === 'L' && formState.A[1] === 'L' && formState.A[2] === 'L';
+    if (homeLLL) {
+      formPatterns.push({ label: `Home team: L-L-L pattern (${tA})`, detail: '3 straight losses at home — desperate setup', delta: -1, triggered: true, isPenalty: true });
+      formDelta -= 1;
     }
   }
 
@@ -377,8 +403,12 @@ function analyze() {
     // Form pattern pass/fail (1/0 for ML)
     fp_mixedForm:       formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
     fp_streakControl:   formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
-    fp_bothRecentDraw:  formAvailable ? (formPatterns.find(p=>p.label==='Both drew in last 2 matches')?.triggered ? 1 : 0) : null,
+    fp_bothRecentDraw:  formAvailable ? (formPatterns.find(p=>p.label.includes('Both drew in last 2'))?.triggered ? 1 : 0) : null,
+    fp_awayWLW:         formAvailable ? (formPatterns.find(p=>p.label.includes('W-L-W pattern'))?.triggered ? 1 : 0) : null,
+    fp_homeDrawLast3:   formAvailable ? (formPatterns.find(p=>p.label.includes('drew in last 3'))?.triggered ? 1 : 0) : null,
     neg_strongVsWeak:   formAvailable ? (formPatterns.find(p=>p.label==='Strong vs weak form mismatch')?.triggered ? 1 : 0) : null,
+    neg_awayLLD:        formAvailable ? (formPatterns.find(p=>p.label.includes('L-L-D pattern'))?.triggered ? 1 : 0) : null,
+    neg_homeLLL:        formAvailable ? (formPatterns.find(p=>p.label.includes('L-L-L pattern'))?.triggered ? 1 : 0) : null,
     outcome: null
   });
 }
@@ -649,7 +679,11 @@ function exportToExcel() {
       // ── Form pattern flags (1/0, blank if form not entered)
       'fp_mixed_form':       h.fp_mixedForm      !== undefined ? n(h.fp_mixedForm)      : '',
       'fp_streak_control':   h.fp_streakControl  !== undefined ? n(h.fp_streakControl)  : '',
-      'fp_both_recent_draw': h.fp_bothRecentDraw  !== undefined ? n(h.fp_bothRecentDraw): '',
+      'fp_both_recent_draw': h.fp_bothRecentDraw !== undefined ? n(h.fp_bothRecentDraw) : '',
+      'fp_away_wlw':         h.fp_awayWLW        !== undefined ? n(h.fp_awayWLW)        : '',
+      'fp_home_draw_last3':  h.fp_homeDrawLast3  !== undefined ? n(h.fp_homeDrawLast3)  : '',
+      'neg_away_lld':        h.neg_awayLLD       !== undefined ? n(h.neg_awayLLD)       : '',
+      'neg_home_lll':        h.neg_homeLLL       !== undefined ? n(h.neg_homeLLL)       : '',
       'neg_strong_vs_weak':  h.neg_strongVsWeak   !== undefined ? n(h.neg_strongVsWeak) : '',
       'form_delta':          n(h.formDelta),
 
