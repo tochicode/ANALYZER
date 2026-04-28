@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v5.3 — Indicator + Form Model
-   474-match update: Away WLW (+1), Home drew last 3 (+1),
-   Away LLD (−1), Home LLL (−1) form patterns added.
+   DrawScan v5.4 — Indicator + Form Model
+   567-match update: U25 tightened ≤1.38, prob bands recalibrated.
+   Score threshold ≥6 is the real draw signal boundary.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -201,8 +201,8 @@ function analyze() {
     },
     {
       label: 'Under 2.5 market signal',
-      detail: 'Odds ≤ 1.40  (data-calibrated, 383-match validated)',
-      pass: under25 !== null && under25 <= 1.40
+      detail: 'Odds ≤ 1.38  (567-match validated, +13.3% lift)',
+      pass: under25 !== null && under25 <= 1.38
     },
     {
       label: 'BTTS market signal',
@@ -302,14 +302,15 @@ function analyze() {
   /* ── TOTAL SCORE ──────────────────────────────────────── */
   const totalScore = Math.max(0, baseScore + formDelta);
 
-  /* ── PROBABILITY BANDS — recalibrated from 383-match dataset ── */
-  // Actual: score≤3=~7%, 4-5=~44%, 6-7=~52%, 8-9=~54%, 10+=~55%
+  /* ── PROBABILITY BANDS — recalibrated from 567-match dataset ── */
+  // Actual: score≤3=~15%, 4-5=~35%, 6-8=~42%, 9=~64%(small n)
+  // Real signal starts at score 6+
   let prob, tier;
   if (totalScore <= 3)       { prob = 15;  tier = 'low'; }
-  else if (totalScore <= 5)  { prob = 42;  tier = 'medium'; }
-  else if (totalScore <= 7)  { prob = 50;  tier = 'medium'; }
-  else if (totalScore <= 9)  { prob = 55;  tier = 'high'; }
-  else                       { prob = 60;  tier = 'high'; }
+  else if (totalScore <= 5)  { prob = 35;  tier = 'low'; }
+  else if (totalScore <= 8)  { prob = 43;  tier = 'medium'; }
+  else if (totalScore === 9) { prob = 58;  tier = 'high'; }
+  else                       { prob = 43;  tier = 'medium'; }
 
   /* ── LEAGUE WEIGHTING (add % directly) ───────────────── */
   const leagueBoost = { high: 8, african: 6, medium: 5, youth: 0, other: 0, '': 0 };
@@ -613,7 +614,7 @@ function exportToExcel() {
       ind_drawOdds:      h.oddsDraw != null ? (h.oddsDraw >= 2.50 && h.oddsDraw <= 2.90 ? 1 : 0) : '',
       ind_balancedOdds:  (h.oddsHome != null && h.oddsAway != null)
                            ? (h.oddsHome>=2.50&&h.oddsHome<=3.00&&h.oddsAway>=2.50&&h.oddsAway<=3.10 ? 1:0) : '',
-      ind_under25:       h.under25 != null ? (h.under25 <= 1.40 ? 1 : 0) : '',
+      ind_under25:       h.under25 != null ? (h.under25 <= 1.38 ? 1 : 0) : '',
       ind_btts:          ((h.bttsy!=null&&h.bttsy>=1.80&&h.bttsy<=1.95)||(h.bttsn!=null&&h.bttsn>=1.40&&h.bttsn<=1.60)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
       ind_leagueDrawRate:h.drawRate != null ? (h.drawRate >= 29 ? 1 : 0) : '',
     };
