@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v5.4 — Indicator + Form Model
-   567-match update: U25 tightened ≤1.38, prob bands recalibrated.
-   Score threshold ≥6 is the real draw signal boundary.
+   DrawScan v5.5 — Indicator + Form Model
+   BTTS Yes flipped to ≥2.00 (market says no BTTS = tight game).
+   Score 9+ = HIGH CONFIDENCE tier.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -206,8 +206,8 @@ function analyze() {
     },
     {
       label: 'BTTS market signal',
-      detail: 'Yes 1.80–1.95  or  No 1.40–1.60',
-      pass: (bttsy !== null && bttsy >= 1.80 && bttsy <= 1.95) ||
+      detail: 'Yes ≥ 2.00 (market expects no BTTS → tight game)  or  No 1.40–1.60',
+      pass: (bttsy !== null && bttsy >= 2.00) ||
             (bttsn !== null && bttsn >= 1.40 && bttsn <= 1.60)
     },
     {
@@ -318,11 +318,23 @@ function analyze() {
   prob = Math.min(95, prob + boost);
 
   if (prob >= 55) tier = 'high';
-  else if (prob >= 38) tier = 'medium';
+  else if (prob >= 35) tier = 'medium';
   else tier = 'low';
+
+  // Confidence label for display
+  const confidenceLabel = totalScore >= 9 ? '★ HIGH CONFIDENCE' :
+                          totalScore >= 6 ? 'Solid signal' :
+                          totalScore >= 4 ? 'Weak signal' : 'Below threshold';
 
   /* ── RENDER ───────────────────────────────────────────── */
   document.getElementById('res-match').textContent = `${tA} vs ${tB}`;
+  // Show confidence tier badge
+  const confEl = document.getElementById('res-confidence');
+  if (confEl) {
+    confEl.textContent = confidenceLabel;
+    confEl.className = totalScore >= 9 ? 'conf-badge conf-high' :
+                       totalScore >= 6 ? 'conf-badge conf-med' : 'conf-badge conf-low';
+  }
   const tierLabels = { high: 'High Draw League +8%', african: 'African Draw League +6%', medium: 'Medium Draw League +5%', youth: 'Youth Competition', other: '' };
   document.getElementById('res-league-tag').textContent =
     leagueLabel ? leagueLabel + (tierLabels[leagueTier] ? '  ·  ' + tierLabels[leagueTier] : '') : 'League not specified';
@@ -615,7 +627,7 @@ function exportToExcel() {
       ind_balancedOdds:  (h.oddsHome != null && h.oddsAway != null)
                            ? (h.oddsHome>=2.50&&h.oddsHome<=3.00&&h.oddsAway>=2.50&&h.oddsAway<=3.10 ? 1:0) : '',
       ind_under25:       h.under25 != null ? (h.under25 <= 1.38 ? 1 : 0) : '',
-      ind_btts:          ((h.bttsy!=null&&h.bttsy>=1.80&&h.bttsy<=1.95)||(h.bttsn!=null&&h.bttsn>=1.40&&h.bttsn<=1.60)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
+      ind_btts:          ((h.bttsy!=null&&h.bttsy>=2.00)||(h.bttsn!=null&&h.bttsn>=1.40&&h.bttsn<=1.60)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
       ind_leagueDrawRate:h.drawRate != null ? (h.drawRate >= 29 ? 1 : 0) : '',
     };
   }
