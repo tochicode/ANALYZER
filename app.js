@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
-   DrawScan v5.5 — Indicator + Form Model
-   BTTS Yes flipped to ≥2.00 (market says no BTTS = tight game).
-   Score 9+ = HIGH CONFIDENCE tier.
+   DrawScan v5.6 — Indicator + Form Model
+   Win streak hard filter removed. Streak control removed (100% fire rate).
+   Away WS≥2 penalty, tighter U25/BTTS/balanced odds thresholds.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -163,11 +163,8 @@ function analyze() {
       fails.push(`Goal difference gap between teams (${gdGap}) exceeds max of 15`);
   }
 
-  // Winning streak — block if 3 or more consecutive wins
-  if (formASet.length >= 3 && wsA >= 3)
-    fails.push(`${tA} has ${wsA} consecutive wins — strong momentum reduces draw likelihood`);
-  if (formBSet.length >= 3 && wsB >= 3)
-    fails.push(`${tB} has ${wsB} consecutive wins — strong momentum reduces draw likelihood`);
+  // Win streak hard filter removed — streaking teams can still draw
+  // Handled as soft penalties in form patterns instead
 
   // Combined goals — calculated for indicators & soft penalty
   const cgs = (gsA !== null && gsB !== null) ? +(gsA + gsB).toFixed(2) : null;
@@ -194,20 +191,19 @@ function analyze() {
     },
     {
       label: 'Balanced team odds',
-      detail: 'Home 2.50–3.00 · Away 2.50–3.10',
+      detail: '|Home − Away| ≤ 0.25  (50% DR, 662-match validated)',
       pass: oddsHome !== null && oddsAway !== null &&
-            oddsHome >= 2.50 && oddsHome <= 3.00 &&
-            oddsAway >= 2.50 && oddsAway <= 3.10
+            Math.abs(oddsHome - oddsAway) <= 0.25
     },
     {
       label: 'Under 2.5 market signal',
-      detail: 'Odds ≤ 1.38  (567-match validated, +13.3% lift)',
-      pass: under25 !== null && under25 <= 1.38
+      detail: 'Odds ≤ 1.37  (662-match validated, +15% lift)',
+      pass: under25 !== null && under25 <= 1.37
     },
     {
       label: 'BTTS market signal',
-      detail: 'Yes ≥ 2.00 (market expects no BTTS → tight game)  or  No 1.40–1.60',
-      pass: (bttsy !== null && bttsy >= 2.00) ||
+      detail: 'Yes ≥ 2.10 (market strongly expects no BTTS)  or  No 1.40–1.60',
+      pass: (bttsy !== null && bttsy >= 2.10) ||
             (bttsn !== null && bttsn >= 1.40 && bttsn <= 1.60)
     },
     {
@@ -235,17 +231,14 @@ function analyze() {
     formPatterns.push({ label: 'Mixed form vs mixed form', detail: 'Both teams show W, D & L', delta: 1, triggered: p1 });
     if (p1) formDelta += 1;
 
-    // Streak control (+1)
-    const p2 = wsA < 3 && wsB < 3;
-    formPatterns.push({ label: 'Streak control', detail: 'Both teams fewer than 3 consecutive wins', delta: 1, triggered: p2 });
-    if (p2) formDelta += 1;
+    // Streak control removed — fired on 100% of matches, zero discriminatory power
 
-    // P3: Both drew in last 2 (+1) — stable +6.5% lift across 3 datasets
+    // P2: Both drew in last 2 (+1) — stable +6.5% lift across 3 datasets
     const recentDrawA = formState.A.slice(0,2).filter(r => r === 'D').length >= 1;
     const recentDrawB = formState.B.slice(0,2).filter(r => r === 'D').length >= 1;
-    const p3 = recentDrawA && recentDrawB;
-    formPatterns.push({ label: 'Both drew in last 2 matches', detail: 'Recent draw form for both sides', delta: 1, triggered: p3 });
-    if (p3) formDelta += 1;
+    const p2 = recentDrawA && recentDrawB;
+    formPatterns.push({ label: 'Both drew in last 2 matches', detail: 'Recent draw form for both sides', delta: 1, triggered: p2 });
+    if (p2) formDelta += 1;
 
     // P4: Away WLW pattern (+1) — +32.8% lift, consistent in all 5 datasets
     // Most recent first: formState.B[0]=W, [1]=L, [2]=W
@@ -259,16 +252,20 @@ function analyze() {
     formPatterns.push({ label: `Home team drew in last 3 (${tA})`, detail: 'Home team drew at least once in last 3 matches', delta: 1, triggered: homeDrawLast3 });
     if (homeDrawLast3) formDelta += 1;
 
-    // Penalty: 5 straight wins (−2)
-    const fiveWinA = formState.A.every(r => r === 'W');
-    const fiveWinB = formState.B.every(r => r === 'W');
-    if (fiveWinA || fiveWinB) {
-      const who = fiveWinA && fiveWinB ? 'Both teams' : fiveWinA ? tA : tB;
-      formPatterns.push({ label: `${who}: 5 straight wins`, detail: 'Strong momentum — draw unlikely', delta: -2, triggered: true, isPenalty: true });
-      formDelta -= 2;
+    // Penalty: Away team on win streak ≥2 (−1) — 20% DR at n=65, −16% lift
+    if (wsB >= 2) {
+      formPatterns.push({ label: `Away on ${wsB}-game win streak (${tB})`, detail: 'Away team momentum — kills draw probability', delta: -1, triggered: true, isPenalty: true });
+      formDelta -= 1;
+
+      // Extra penalty: Away WS≥2 facing a home side on losing streak ≥2 (−1 more)
+      // 0% DR at n=7 — extreme mismatch
+      if (wsA === 0 && formState.A.slice(0,2).every(r => r === 'L')) {
+        formPatterns.push({ label: `Mismatch: ${tB} winning, ${tA} losing`, detail: 'Away WS≥2 vs Home LS≥2 — 0% draw rate in data', delta: -1, triggered: true, isPenalty: true });
+        formDelta -= 1;
+      }
     }
 
-    // Penalty: strong vs weak mismatch (−2)
+    // Penalty: strong vs weak mismatch (−2) — kept as general protection
     const strongWeak = (wA >= 4 && lB >= 4) || (wB >= 4 && lA >= 4);
     if (strongWeak) {
       formPatterns.push({ label: 'Strong vs weak form mismatch', detail: 'One team 4–5W vs other 4–5L', delta: -2, triggered: true, isPenalty: true });
@@ -415,7 +412,8 @@ function analyze() {
     ind_leagueDrawRate: baseIndicators[5].pass ? 1 : 0,
     // Form pattern pass/fail (1/0 for ML)
     fp_mixedForm:       formAvailable ? (formPatterns.find(p=>p.label==='Mixed form vs mixed form')?.triggered ? 1 : 0) : null,
-    fp_streakControl:   formAvailable ? (formPatterns.find(p=>p.label==='Streak control')?.triggered ? 1 : 0) : null,
+    fp_awayWinStreak:   formAvailable ? (formPatterns.find(p=>p.label?.includes('Away on') && p.label?.includes('win streak'))?.triggered ? 1 : 0) : null,
+    fp_streakMismatch:  formAvailable ? (formPatterns.find(p=>p.label?.includes('Mismatch:'))?.triggered ? 1 : 0) : null,
     fp_bothRecentDraw:  formAvailable ? (formPatterns.find(p=>p.label.includes('Both drew in last 2'))?.triggered ? 1 : 0) : null,
     fp_awayWLW:         formAvailable ? (formPatterns.find(p=>p.label.includes('W-L-W pattern'))?.triggered ? 1 : 0) : null,
     fp_homeDrawLast3:   formAvailable ? (formPatterns.find(p=>p.label.includes('drew in last 3'))?.triggered ? 1 : 0) : null,
@@ -625,9 +623,9 @@ function exportToExcel() {
       ind_gdGap:         (gdA != null && gdB != null) ? (Math.abs(gdA-gdB) <= 8 ? 1 : 0) : '',
       ind_drawOdds:      h.oddsDraw != null ? (h.oddsDraw >= 2.50 && h.oddsDraw <= 2.90 ? 1 : 0) : '',
       ind_balancedOdds:  (h.oddsHome != null && h.oddsAway != null)
-                           ? (h.oddsHome>=2.50&&h.oddsHome<=3.00&&h.oddsAway>=2.50&&h.oddsAway<=3.10 ? 1:0) : '',
-      ind_under25:       h.under25 != null ? (h.under25 <= 1.38 ? 1 : 0) : '',
-      ind_btts:          ((h.bttsy!=null&&h.bttsy>=2.00)||(h.bttsn!=null&&h.bttsn>=1.40&&h.bttsn<=1.60)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
+                           ? (Math.abs(h.oddsHome-h.oddsAway)<=0.25 ? 1:0) : '',
+      ind_under25:       h.under25 != null ? (h.under25 <= 1.37 ? 1 : 0) : '',
+      ind_btts:          ((h.bttsy!=null&&h.bttsy>=2.10)||(h.bttsn!=null&&h.bttsn>=1.40&&h.bttsn<=1.60)) ? 1 : (h.bttsy==null&&h.bttsn==null ? '' : 0),
       ind_leagueDrawRate:h.drawRate != null ? (h.drawRate >= 29 ? 1 : 0) : '',
     };
   }
@@ -691,7 +689,8 @@ function exportToExcel() {
 
       // ── Form pattern flags (1/0, blank if form not entered)
       'fp_mixed_form':       h.fp_mixedForm      !== undefined ? n(h.fp_mixedForm)      : '',
-      'fp_streak_control':   h.fp_streakControl  !== undefined ? n(h.fp_streakControl)  : '',
+      'fp_away_win_streak':  h.fp_awayWinStreak  !== undefined ? n(h.fp_awayWinStreak)  : '',
+      'fp_streak_mismatch':  h.fp_streakMismatch !== undefined ? n(h.fp_streakMismatch) : '',
       'fp_both_recent_draw': h.fp_bothRecentDraw !== undefined ? n(h.fp_bothRecentDraw) : '',
       'fp_away_wlw':         h.fp_awayWLW        !== undefined ? n(h.fp_awayWLW)        : '',
       'fp_home_draw_last3':  h.fp_homeDrawLast3  !== undefined ? n(h.fp_homeDrawLast3)  : '',
